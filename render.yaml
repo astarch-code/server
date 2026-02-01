@@ -14,4 +14,12 @@ services:
       - key: PORT
         value: 10000
       - key: FRONTEND_URL
-        generateValue: true
+        value: https://itsm-frontend.onrender.com  # Замените на ваш фронтенд URL
+    healthCheckPath: /health
+    autoDeploy: true
+
+databases:
+  - name: experiment-db
+    plan: free
+    databaseName: experiment_db
+    user: experiment_user

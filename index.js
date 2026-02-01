@@ -7,7 +7,30 @@ const { Pool } = require('pg');
 const path = require('path');
 
 const app = express();
-app.use(cors());
+
+// --- CORS Configuration ---
+const allowedOrigins = process.env.FRONTEND_URL 
+  ? [process.env.FRONTEND_URL, 'http://localhost:3000']
+  : ['http://localhost:3000', 'http://localhost:5173'];
+
+console.log('Allowed CORS origins:', allowedOrigins);
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(express.json());
 
 // Serve static files from public directory
@@ -16,9 +39,14 @@ app.use(express.static(path.join(__dirname, 'public')));
 const server = http.createServer(app);
 const io = new Server(server, { 
   cors: { 
-    origin: process.env.FRONTEND_URL || "*",
-    methods: ["GET", "POST"]
-  } 
+    origin: allowedOrigins,
+    methods: ["GET", "POST"],
+    credentials: true
+  },
+  // Настройки для работы за прокси на Render
+  transports: ['websocket', 'polling'],
+  pingTimeout: 60000,
+  pingInterval: 25000
 });
 
 // --- PostgreSQL Connection ---
@@ -524,7 +552,10 @@ const getClientReaction = (isSuccess) => {
 };
 
 io.on('connection', (socket) => {
+  console.log('✅ New client connected:', socket.id);
+
   socket.on('request:init', (data) => {
+    console.log('📥 Received init request from participant:', data?.participantParity);
     if (data && data.participantParity) {
       participantParity = data.participantParity;
     }
@@ -1047,8 +1078,35 @@ app.post('/admin/critical', async (req, res) => {
 
 // Health check endpoint for Render
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
+  res.status(200).json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    stage: currentStage,
+    connectedClients: io.engine.clientsCount,
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
+// Route for instructions.html
+app.get('/instructions.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'instructions.html'));
+});
+
+// Route for all other requests - serve index.html for SPA
+app.get('*', (req, res) => {
+  if (req.path.startsWith('/api/')) {
+    res.status(404).json({ error: 'API endpoint not found' });
+  } else if (req.path === '/instructions.html') {
+    res.sendFile(path.join(__dirname, 'public', 'instructions.html'));
+  } else {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  }
 });
 
 const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+server.listen(PORT, () => {
+  console.log(`✅ Server running on port ${PORT}`);
+  console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔗 FRONTEND_URL: ${process.env.FRONTEND_URL || 'http://localhost:3000'}`);
+  console.log(`📊 Database connected: ${process.env.DATABASE_URL ? 'Yes' : 'No'}`);
+});

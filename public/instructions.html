@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IT Support System Tutorial</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            line-height: 1.6;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 30px;
+            background: rgba(15, 23, 42, 0.9);
+            border-radius: 16px;
+            border: 1px solid rgba(148, 163, 184, 0.2);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid rgba(6, 182, 212, 0.4);
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            background: linear-gradient(90deg, #06b6d4 0%, #3b82f6 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            margin-bottom: 10px;
+        }
+
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: rgba(30, 41, 59, 0.6);
+            border-radius: 12px;
+            border-left: 4px solid #06b6d4;
+        }
+
+        .section h2 {
+            font-size: 1.5rem;
+            color: #f1f5f9;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .step {
+            margin-bottom: 20px;
+            padding-left: 15px;
+            border-left: 2px solid rgba(148, 163, 184, 0.3);
+        }
+
+        .step h3 {
+            color: #06b6d4;
+            margin-bottom: 10px;
+        }
+
+        .highlight {
+            background: rgba(6, 182, 212, 0.1);
+            border: 1px solid rgba(6, 182, 212, 0.3);
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+
+        ul, ol {
+            padding-left: 20px;
+            margin: 10px 0;
+        }
+
+        li {
+            margin-bottom: 8px;
+        }
+
+        .button-demo {
+            display: inline-block;
+            background: rgba(6, 182, 212, 0.2);
+            border: 1px solid rgba(6, 182, 212, 0.5);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 0.9rem;
+            color: #06b6d4;
+            margin: 0 4px;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin: 0 4px;
+        }
+
+        .status-free { background: rgba(148, 163, 184, 0.2); color: #94a3b8; }
+        .status-progress { background: rgba(6, 182, 212, 0.2); color: #06b6d4; }
+        .status-solved { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+        .status-critical { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+
+        @media (max-width: 768px) {
+            .container { padding: 15px; }
+            .header h1 { font-size: 2rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>IT Support System Tutorial</h1>
+            <p>Learn how to use the ticket management system</p>
+        </div>
+
+        <div class="section">
+            <h2>🎯 System Overview</h2>
+            <p>Welcome to the IT Support System simulation. You will handle technical support tickets in this environment.</p>
+            <ul>
+                <li><strong>Ticket Queue</strong> - List of all incoming support requests</li>
+                <li><strong>Knowledge Base (KB)</strong> - Articles with solutions to common problems</li>
+                <li><strong>Team/Colleagues</strong> - Other support agents who can help you</li>
+                <li><strong>AI Assistant</strong> - AI that can provide advice or solve tickets</li>
+            </ul>
+            <div class="highlight">
+                <strong>Important:</strong> This tutorial has no time limit. Take your time to learn all features.
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>📋 Your Tasks</h2>
+            <p>As an IT support agent, your main responsibilities:</p>
+            <ol>
+                <li>Monitor the ticket queue for new requests</li>
+                <li>Assign tickets to yourself when ready to work on them</li>
+                <li>Find solutions using the Knowledge Base</li>
+                <li>Complete tickets by providing accurate solutions</li>
+                <li>Handle critical tickets with urgency</li>
+            </ol>
+        </div>
+
+        <div class="section">
+            <h2>🔄 Step-by-Step Guide</h2>
+            
+            <div class="step">
+                <h3>Step 1: View and Assign Tickets</h3>
+                <p>Go to the <strong>Tickets</strong> page to see all available tickets. Each ticket shows:</p>
+                <ul>
+                    <li>Ticket title and description</li>
+                    <li>Status: <span class="status-badge status-free">Free</span>, <span class="status-badge status-progress">In Progress</span>, or <span class="status-badge status-solved">Solved</span></li>
+                    <li>Timer showing time remaining</li>
+                    <li>Severity (normal or critical)</li>
+                </ul>
+                <div class="highlight">
+                    <strong>To assign a ticket:</strong> Click on the ticket, then change status from <span class="button-demo">Free</span> to <span class="button-demo">In Progress</span>.
+                </div>
+            </div>
+
+            <div class="step">
+                <h3>Step 2: Find Solutions</h3>
+                <p>After assigning a ticket, find a solution:</p>
+                <ul>
+                    <li>Check the <strong>Knowledge Base</strong> for related articles</li>
+                    <li>Read articles by clicking on them</li>
+                    <li>Look for keywords matching the ticket description</li>
+                </ul>
+            </div>
+
+            <div class="step">
+                <h3>Step 3: Complete the Ticket</h3>
+                <p>Once you've found a solution:</p>
+                <ol>
+                    <li>In ticket detail view, write your solution</li>
+                    <li>Select the relevant Knowledge Base article</li>
+                    <li>Click <span class="button-demo">Complete</span> button</li>
+                </ol>
+            </div>
+
+            <div class="step">
+                <h3>Step 4: Handle Critical Tickets</h3>
+                <p><span class="status-badge status-critical">CRITICAL</span> tickets require immediate attention:</p>
+                <ul>
+                    <li>Red timers count down faster</li>
+                    <li>Business operations are affected</li>
+                    <li>Urgent notifications appear</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>🎮 Controls</h2>
+            <ul>
+                <li><strong>Tickets page</strong>: View and manage all tickets</li>
+                <li><strong>Knowledge Base</strong>: Search for solution articles</li>
+                <li><strong>Team page</strong>: See colleague availability (in team mode)</li>
+                <li><strong>Ask AI</strong>: Get AI advice on tickets (in AI mode)</li>
+                <li><strong>Delegate</strong>: Assign tickets to colleagues (in team mode)</li>
+            </ul>
+        </div>
+
+        <div class="section">
+            <h2>⚠️ Important Notes</h2>
+            <ul>
+                <li>Tutorial tickets have no time limits</li>
+                <li>Real experiment tickets have strict deadlines</li>
+                <li>Critical tickets must be solved immediately</li>
+                <li>Use Knowledge Base articles for better success rates</li>
+                <li>Check timer colors: green (plenty time), yellow (running out), red (overdue)</li>
+            </ul>
+        </div>
+
+        <div style="text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid rgba(148, 163, 184, 0.2);">
+            <p style="color: #94a3b8;">When ready, click "Start Tutorial" to begin practicing</p>
+        </div>
+    </div>
+</body>
+</html>

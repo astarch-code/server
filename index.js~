@@ -1,0 +1,147 @@
+// server/index.js
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const cors = require('cors');
+const { v4: uuidv4 } = require('uuid');
+const { agents, kbArticles, ticketTemplates } = require('./data');
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: "*" } });
+
+// --- STATE ---
+let tickets = [];
+let logs = [];
+let currentStage = 1; // 1: Solo, 2: Bots, 3: AI, 4: Hybrid
+let isExperimentRunning = false;
+
+// --- LOGIC ---
+
+// Генерация тикета
+const spawnTicket = (isCritical = false) => {
+    const template = ticketTemplates[Math.floor(Math.random() * ticketTemplates.length)];
+    const ticket = {
+        id: uuidv4(),
+        title: isCritical ? "CRITICAL: SERVER DOWN" : template.title,
+        description: isCritical ? "System unavailable!" : template.description,
+        status: 'not assigned', // 'not assigned', 'in Progress', 'solved', 'missed'
+        severity: isCritical ? 'critical' : 'normal',
+        createdAt: Date.now(),
+        deadline: Date.now() + (isCritical ? 60000 : 120000), // 1 или 2 минуты
+        correctKbId: isCritical ? 'kb_4' : template.correctKbId,
+        assignedTo: null,
+        solution: '',
+        linkedKbId: null
+    };
+    
+    tickets.push(ticket);
+    io.emit('ticket:new', ticket);
+
+    // AI Логика (Этапы 3 и 4)
+    if (currentStage === 3 || currentStage === 4) {
+        setTimeout(() => {
+            const aiAction = Math.random() > 0.5 ? 'solve' : 'suggest';
+            io.emit('ai:action', { ticketId: ticket.id, action: aiAction, kbId: ticket.correctKbId });
+        }, 5000); // AI реагирует через 5 сек
+    }
+};
+
+// Таймер проверки просроченных тикетов
+setInterval(() => {
+    if (!isExperimentRunning) return;
+    const now = Date.now();
+    let updated = false;
+    
+    tickets.forEach(t => {
+        if (t.status === 'not assigned' && now > t.deadline) {
+            t.status = 'missed';
+            updated = true;
+        }
+    });
+
+    if (updated) io.emit('tickets:update', tickets);
+    
+    // Рандомный спавн тикетов (каждые ~10 сек)
+    if (Math.random() > 0.7) spawnTicket();
+}, 2000);
+
+
+// --- SOCKET EVENTS ---
+io.on('connection', (socket) => {
+    console.log('Client connected');
+    socket.emit('init', { tickets, kbArticles, agents, currentStage });
+
+    // Участник берет тикет
+socket.on('ticket:assign', (ticketId) => {
+    const ticket = tickets.find(t => t.id === ticketId);
+    
+    // ПРОВЕРКА: Если тикет не найден (уже удален или этап сменился), выходим
+    if (!ticket) {
+        console.log(`Ticket ${ticketId} not found, assignment aborted.`);
+        return; 
+    }
+
+    if (ticket.status === 'not assigned') {
+        ticket.status = 'in Progress';
+        ticket.assignedTo = 'participant'; // Теперь это не упадет
+        io.emit('tickets:update', tickets);
+    }
+});
+
+    // Участник решает тикет
+socket.on('ticket:solve', (data) => {
+    const ticket = tickets.find(t => t.id === data.ticketId);
+    if (!ticket) return; 
+
+    ticket.status = 'solved';
+    ticket.solution = data.solution;
+    ticket.linkedKbId = data.linkedKbId;
+    io.emit('tickets:update', tickets);
+});
+
+    // Делегирование боту (Этапы 2 и 4)
+    socket.on('bot:delegate', ({ ticketId, botId }) => {
+        const bot = agents.find(a => a.id === botId);
+        const t = tickets.find(x => x.id === ticketId);
+        
+        // Проверка доверия
+        if (Math.random() > bot.trust) {
+            socket.emit('bot:refusal', { botName: bot.name });
+            return;
+        }
+
+        // Бот берет тикет
+        t.assignedTo = bot.name;
+        t.status = 'in Progress';
+        io.emit('tickets:update', tickets);
+
+        // Бот решает (с задержкой)
+        setTimeout(() => {
+            const success = Math.random() < bot.skill;
+            t.status = 'solved';
+            t.solution = success ? "Fixed by bot" : "Bot messed up";
+            t.linkedKbId = success ? t.correctKbId : 'wrong_kb';
+            io.emit('tickets:update', tickets);
+        }, 3000);
+    });
+});
+
+// --- ADMIN API ---
+app.post('/admin/start', (req, res) => {
+    isExperimentRunning = true;
+    currentStage = req.body.stage || 1;
+    tickets = []; // Очистка перед этапом
+    io.emit('stage:start', currentStage);
+    res.json({ msg: 'Stage started' });
+});
+
+app.post('/admin/critical', (req, res) => {
+    spawnTicket(true);
+    res.json({ msg: 'Critical ticket sent' });
+});
+
+server.listen(3001, () => console.log('Server running on port 3001'));

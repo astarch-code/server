@@ -1,0 +1,132 @@
+[
+  {
+    "id": "pre_q1",
+    "question": "What is your age group?",
+    "type": "multiple",
+    "options": [
+      "18-24",
+      "25-34",
+      "35-44",
+      "45-54",
+      "55+"
+    ],
+    "required": false
+  },
+  {
+    "id": "pre_q2",
+    "question": "What is your current occupation?",
+    "type": "multiple",
+    "options": [
+      "Study",
+      "Work",
+      "Retirement",
+      "Other"
+    ],
+    "required": false
+  },
+  {
+    "id": "pre_q3",
+    "question": "Are you familiar with IT Service Management (ITSM)?",
+    "type": "multiple",
+    "options": [
+      "Yes",
+      "No"
+    ],
+    "required": false
+  },
+  {
+    "id": "pre_q4",
+    "question": "Do you have experience working in IT support or similar?",
+    "type": "multiple",
+    "options": [
+      "Yes",
+      "No"
+    ],
+    "required": false
+  },
+  {
+    "id": "pre_q5",
+    "question": "Are you familiar with modern AI Models such as ChatGPT?",
+    "type": "multiple",
+    "options": [
+      "Yes, and I use them",
+      "Aware of them, but almost or comepletely do not use them",
+      "Not at all"
+    ],
+    "required": false
+  },
+  {
+    "id": "pre_q6",
+    "question": "How would you rate your level of proficiency with AI?",
+    "type": "multiple",
+    "options": [
+      "1 - excelletnt",
+      "2",
+      "3",
+      "4",
+      "5 - poor"
+    ],
+    "required": false
+  },
+  {
+    "id": "pre_q7",
+    "question": "How would you rate your level of trust towards AI?",
+    "type": "multiple",
+    "options": [
+      "1 - very high",
+      "2",
+      "3",
+      "4",
+      "5 - very low"
+    ],
+    "required": false
+  },
+  {
+    "id": "pre_q8",
+    "question": "Do you prefer working alone or in a group?",
+    "type": "multiple",
+    "options": [
+      "Alone",
+      "In a group"
+    ],
+    "required": false
+  },
+  {
+    "id": "pre_q9",
+    "question": "Do you feel more confident when you work in a group or with AI?",
+    "type": "multiple",
+    "options": [
+      "With AI",
+      "In a group"
+    ],
+    "required": false
+  },
+  {
+    "id": "pre_q10",
+    "question": "If you required assistance for a certain task, which option would you choose?",
+    "type": "multiple",
+    "options": [
+      "Ask colleagues/friends/studymates",
+      "Use AI Chatbot"
+    ],
+    "required": false
+  },
+  {
+    "id": "pre_q11",
+    "question": "What would you expect from a good IT support system?",
+    "type": "text",
+    "placeholder": [
+      "Your ideas..."
+    ],
+    "required": false
+  },
+  {
+    "id": "pre_q12",
+    "question": "What would you expect from a good AI Bot integrated in an IT support system?",
+    "type": "text",
+    "placeholder": [
+      "Your ideas..."
+    ],
+    "required": false
+  }
+]

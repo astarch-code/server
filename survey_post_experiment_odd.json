@@ -1,0 +1,123 @@
+[
+  {
+    "id": "post_odd_q1",
+    "question": "How effective did colleagues work?",
+    "type": "multiple",
+    "options": [
+      "1 - poor",
+      "2",
+      "3",
+      "4",
+      "5 - excellent, Not sure"
+    ],
+    "required": false
+  },
+  {
+    "id": "post_odd_q2",
+    "question": "How often did you delegate task to you colleagues?",
+    "type": "multiple",
+    "options": [
+      "Every time",
+      "Few times",
+      "Tried to solve everything by myself"
+    ],
+    "required": false
+  },
+  {
+    "id": "post_odd_q3",
+    "question": "Did you feel more confidence when working with colleagues?",
+    "type": "multiple",
+    "options": [
+      "Yes",
+      "No",
+      "Not sure"
+    ],
+    "required": false
+  },
+  {
+    "id": "post_odd_q4",
+    "question": "Which type of colleague did you delegate tasks to?",
+    "type": "multiple",
+    "options": [
+      "Experienced, but not friendly",
+      "Friendly, but not experienced",
+      "Not sure"
+    ],
+    "required": false
+  },
+  {
+    "id": "post_odd_q5",
+    "question": "Do you think you would feel even more confident if there were even more colleauges during the shif?",
+    "type": "multiple",
+    "options": [
+      "Yes",
+      "No",
+      "Not sure"
+    ],
+    "required": false
+  },
+  {
+    "id": "post_odd_q6",
+    "question": "Did you loose trust in colleagues, when you saw them err?",
+    "type": "multiple",
+    "options": [
+      "Yes",
+      "No",
+      "Not sure"
+    ],
+    "required": false
+  },
+  {
+    "id": "post_odd_q7",
+    "question": "'If colleagues are here, I don't need to worry about anything', did you have such thoughts?",
+    "type": "multiple",
+    "options": [
+      "Yes",
+      "No",
+      "Not sure"
+    ],
+    "required": false
+  },
+  {
+    "id": "post_odd_q8",
+    "question": "How did you feel when there were no colleagues during ciritical tickets?",
+    "type": "multiple",
+    "options": [
+      "1 - very confident",
+      "2",
+      "3",
+      "4",
+      "5 - very unconfident, Not sure"
+    ],
+    "required": false
+  },
+  {
+    "id": "post_odd_q9",
+    "question": "Did you also not react to critical tickets just like colleagues?",
+    "type": "multiple",
+    "options": [
+      "Yes",
+      "No",
+      "Not sure"
+    ],
+    "required": false
+  },
+  {
+    "id": "post_odd_q10",
+    "question": "Woul you feel more confident with an AI Bot rather than colleagues?",
+    "type": "multiple",
+    "options": [
+      "Yes",
+      "No",
+      "Not sure"
+    ],
+    "required": false
+  },
+  {
+    "id": "post_odd_q11",
+    "question": "General remarks",
+    "type": "text",
+    "prompt": "What did you like and what did you not like in this experiment?",
+    "required": false
+  }
+]

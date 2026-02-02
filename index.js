@@ -16,32 +16,92 @@ const allowedOrigins = process.env.FRONTEND_URL
 
 console.log('Allowed CORS origins:', allowedOrigins);
 
-// --- Load survey questions from JSON files ---
+// --- Load data from JSON files ---
 let preExperimentQuestions = [];
 let postExperimentQuestions = { even: [], odd: [] };
+let ticketTemplates = [];
+let kbArticles = [];
 
-try {
-  const preExperimentPath = path.join(__dirname, 'data', 'pre-experiment-survey.json');
-  const postExperimentPath = path.join(__dirname, 'data', 'post-experiment-survey.json');
-  
-  if (fs.existsSync(preExperimentPath)) {
-    const data = fs.readFileSync(preExperimentPath, 'utf8');
-    preExperimentQuestions = JSON.parse(data);
-    console.log('✅ Loaded pre-experiment survey questions from file');
-  } else {
-    console.log('⚠️ pre-experiment-survey.json not found, using default questions');
+function loadDataFromJson() {
+  try {
+    // Load survey questions
+    const preExperimentPath = path.join(__dirname, 'data', 'pre-experiment-survey.json');
+    const postExperimentPath = path.join(__dirname, 'data', 'post-experiment-survey.json');
+    const ticketTemplatesPath = path.join(__dirname, 'data', 'ticket-templates.json');
+    const kbArticlesPath = path.join(__dirname, 'data', 'kb-articles.json');
+    
+    if (fs.existsSync(preExperimentPath)) {
+      const data = fs.readFileSync(preExperimentPath, 'utf8');
+      preExperimentQuestions = JSON.parse(data);
+      console.log('✅ Loaded pre-experiment survey questions from file');
+    } else {
+      console.log('⚠️ pre-experiment-survey.json not found, using default questions');
+      preExperimentQuestions = [
+        { id: 'pre_1', question: 'What is your age?', type: 'text', required: true, placeholder: 'Enter your age' },
+        { id: 'pre_2', question: 'What is your gender?', type: 'multiple', required: true, options: ['Male', 'Female', 'Other', 'Prefer not to say'] },
+        { id: 'pre_3', question: 'What is your highest level of education?', type: 'multiple', required: true, options: ['High School', 'Bachelor\'s Degree', 'Master\'s Degree', 'PhD', 'Other'] },
+        { id: 'pre_4', question: 'How familiar are you with IT support systems?', type: 'multiple', required: true, options: ['Not familiar at all', 'Slightly familiar', 'Moderately familiar', 'Very familiar', 'Expert'] },
+        { id: 'pre_5', question: 'Have you ever worked in IT support or a similar role?', type: 'multiple', required: true, options: ['Yes, professionally', 'Yes, informally', 'No, never'] }
+      ];
+    }
+    
+    if (fs.existsSync(postExperimentPath)) {
+      const data = fs.readFileSync(postExperimentPath, 'utf8');
+      postExperimentQuestions = JSON.parse(data);
+      console.log('✅ Loaded post-experiment survey questions from file');
+    } else {
+      console.log('⚠️ post-experiment-survey.json not found, using default questions');
+      postExperimentQuestions = {
+        even: [
+          { id: 'post_even_1', question: 'How helpful was the AI assistant?', type: 'multiple', required: true, options: ['Not helpful at all', 'Slightly helpful', 'Moderately helpful', 'Very helpful', 'Extremely helpful'] },
+          { id: 'post_even_2', question: 'Did the AI assistant improve your efficiency?', type: 'multiple', required: true, options: ['Not at all', 'Slightly improved', 'Moderately improved', 'Significantly improved', 'Extremely improved'] },
+          { id: 'post_even_3', question: 'Would you prefer to work with AI assistance in the future?', type: 'multiple', required: true, options: ['Definitely not', 'Probably not', 'Neutral', 'Probably yes', 'Definitely yes'] },
+          { id: 'post_even_4', question: 'What aspects of the AI assistant could be improved?', type: 'text', required: false, placeholder: 'Enter your suggestions' }
+        ],
+        odd: [
+          { id: 'post_odd_1', question: 'How helpful were your colleagues?', type: 'multiple', required: true, options: ['Not helpful at all', 'Slightly helpful', 'Moderately helpful', 'Very helpful', 'Extremely helpful'] },
+          { id: 'post_odd_2', question: 'Did working with colleagues improve your efficiency?', type: 'multiple', required: true, options: ['Not at all', 'Slightly improved', 'Moderately improved', 'Significantly improved', 'Extremely improved'] },
+          { id: 'post_odd_3', question: 'Would you prefer to work with colleagues in the future?', type: 'multiple', required: true, options: ['Definitely not', 'Probably not', 'Neutral', 'Probably yes', 'Definitely yes'] },
+          { id: 'post_odd_4', question: 'What aspects of teamwork could be improved?', type: 'text', required: false, placeholder: 'Enter your suggestions' }
+        ]
+      };
+    }
+    
+    if (fs.existsSync(ticketTemplatesPath)) {
+      const data = fs.readFileSync(ticketTemplatesPath, 'utf8');
+      ticketTemplates = JSON.parse(data);
+      console.log('✅ Loaded ticket templates from file');
+    } else {
+      console.log('⚠️ ticket-templates.json not found, using default templates');
+      ticketTemplates = [
+        { title: 'VPN Not Working From Home', desc: 'Employee cannot connect to the network.' },
+        { title: 'Printer in Accounting Jammed Paper', desc: 'Print queue stalled, red light blinking.' },
+        { title: '1C Crashed During Report', desc: 'Program closes with memory error.' },
+        { title: 'Access Needed to Network Folder', desc: 'Marketing needs access to Z drive.' },
+        { title: 'Outlook Not Receiving Email', desc: 'Last email received 3 hours ago.' }
+      ];
+    }
+    
+    if (fs.existsSync(kbArticlesPath)) {
+      const data = fs.readFileSync(kbArticlesPath, 'utf8');
+      kbArticles = JSON.parse(data);
+      console.log('✅ Loaded knowledge base articles from file');
+    } else {
+      console.log('⚠️ kb-articles.json not found, using default articles');
+      kbArticles = [
+        { id: 'kb_101', title: 'VPN Connection Error (Error 800)', content: 'Check user certificates in the Certs folder. If they have expired, reissue via the portal. Restart Cisco AnyConnect.' },
+        { id: 'kb_102', title: 'Printer Paper Jam (HP 4000)', content: 'Open tray 2 and check the pickup rollers. If rollers are worn, replacement is required. Temporary solution: clean with alcohol.' },
+        { id: 'kb_103', title: 'Outlook Not Synchronizing', content: 'Check connection to Exchange. Disable Cached Mode in account settings, restart Outlook, then enable again.' },
+        { id: 'kb_104', title: 'Blue Screen (BSOD) SYSTEM_THREAD', content: 'Error caused by old video card drivers. Update drivers via Device Manager or manufacturer website.' },
+        { id: 'kb_105', title: 'SAP Password Reset', content: 'Use transaction SU01. Enter username, go to Logon Data tab and set temporary password.' }
+      ];
+    }
+  } catch (error) {
+    console.error('❌ Error loading data from JSON files:', error);
   }
-  
-  if (fs.existsSync(postExperimentPath)) {
-    const data = fs.readFileSync(postExperimentPath, 'utf8');
-    postExperimentQuestions = JSON.parse(data);
-    console.log('✅ Loaded post-experiment survey questions from file');
-  } else {
-    console.log('⚠️ post-experiment-survey.json not found, using default questions');
-  }
-} catch (error) {
-  console.error('❌ Error loading survey questions from files:', error);
 }
+
+loadDataFromJson();
 
 app.use(cors({
   origin: function (origin, callback) {
@@ -82,21 +142,10 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
-// Initialize database tables
+// Initialize database tables for survey responses only
 async function initDatabase() {
   try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS experiment_logs (
-        id SERIAL PRIMARY KEY,
-        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        stage INTEGER,
-        participant_parity VARCHAR(10),
-        action VARCHAR(100),
-        user_type VARCHAR(100),
-        details JSONB
-      )
-    `);
-
+    // Create survey responses table if not exists
     await pool.query(`
       CREATE TABLE IF NOT EXISTS survey_responses (
         id SERIAL PRIMARY KEY,
@@ -110,6 +159,7 @@ async function initDatabase() {
       )
     `);
 
+    // Create post_experiment_survey table if not exists
     await pool.query(`
       CREATE TABLE IF NOT EXISTS post_experiment_survey (
         id SERIAL PRIMARY KEY,
@@ -122,40 +172,8 @@ async function initDatabase() {
       )
     `);
 
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS tickets (
-        id SERIAL PRIMARY KEY,
-        ticket_id VARCHAR(100) UNIQUE,
-        title TEXT,
-        description TEXT,
-        status VARCHAR(50),
-        severity VARCHAR(50),
-        assigned_to VARCHAR(100),
-        created_at TIMESTAMP,
-        deadline_assign TIMESTAMP,
-        deadline_solve TIMESTAMP,
-        solution TEXT,
-        linked_kb_id VARCHAR(100),
-        solution_author VARCHAR(100),
-        is_critical BOOLEAN,
-        is_tutorial BOOLEAN,
-        stage INTEGER,
-        participant_parity VARCHAR(10)
-      )
-    `);
-
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS ticket_messages (
-        id SERIAL PRIMARY KEY,
-        ticket_id VARCHAR(100),
-        message_from VARCHAR(100),
-        message_text TEXT,
-        timestamp TIMESTAMP,
-        FOREIGN KEY (ticket_id) REFERENCES tickets(ticket_id) ON DELETE CASCADE
-      )
-    `);
-
-    console.log('Database tables initialized successfully');
+    // Remove other tables that are not needed (tickets, logs, etc.)
+    console.log('Survey database tables initialized successfully');
   } catch (error) {
     console.error('Error initializing database:', error);
   }
@@ -183,14 +201,6 @@ const agents = [
   { id: 'bot3', name: 'Jonas Weber (very friendly)', skill: 0.4, trust: 0.7, greeting: "Good day, colleagues.", status: 'online' }
 ];
 
-const kbArticles = [
-  { id: 'kb_101', title: 'VPN Connection Error (Error 800)', content: 'Check user certificates in the Certs folder. If they have expired, reissue via the portal. Restart Cisco AnyConnect.' },
-  { id: 'kb_102', title: 'Printer Paper Jam (HP 4000)', content: 'Open tray 2 and check the pickup rollers. If rollers are worn, replacement is required. Temporary solution: clean with alcohol.' },
-  { id: 'kb_103', title: 'Outlook Not Synchronizing', content: 'Check connection to Exchange. Disable Cached Mode in account settings, restart Outlook, then enable again.' },
-  { id: 'kb_104', title: 'Blue Screen (BSOD) SYSTEM_THREAD', content: 'Error caused by old video card drivers. Update drivers via Device Manager or manufacturer website.' },
-  { id: 'kb_105', title: 'SAP Password Reset', content: 'Use transaction SU01. Enter username, go to Logon Data tab and set temporary password.' }
-];
-
 let tickets = [];
 let currentStage = 1; // 1 = tutorial, 2 = experiment
 let currentAiMode = 'normal';
@@ -198,18 +208,10 @@ let participantParity = null; // 'even' or 'odd'
 let stageStartTime = null; // Time when stage 2 started
 let stageDuration = null; // Duration of stage 2 in ms
 
-// --- LOGGING FUNCTIONS WITH POSTGRES ---
+// --- LOGGING FUNCTIONS (REMOVED DATABASE LOGGING) ---
 const writeLog = async (action, user, details) => {
-  try {
-    const query = `
-      INSERT INTO experiment_logs (stage, participant_parity, action, user_type, details)
-      VALUES ($1, $2, $3, $4, $5)
-    `;
-    await pool.query(query, [currentStage, participantParity, action, user, details]);
-    console.log(`[LOG] ${action}: ${JSON.stringify(details)}`);
-  } catch (error) {
-    console.error('Error writing log to database:', error);
-  }
+  // Only log to console, not to database
+  console.log(`[LOG] ${action} (${user}): ${JSON.stringify(details)}`);
 };
 
 const saveSurveyResponse = async (participantId, parity, stage, questionId, questionText, answer) => {
@@ -238,74 +240,12 @@ const savePostExperimentResponse = async (participantId, parity, questionId, que
   }
 };
 
-const saveTicketToDB = async (ticket) => {
-  try {
-    const query = `
-      INSERT INTO tickets (
-        ticket_id, title, description, status, severity, assigned_to, 
-        created_at, deadline_assign, deadline_solve, solution, linked_kb_id, 
-        solution_author, is_critical, is_tutorial, stage, participant_parity
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-      ON CONFLICT (ticket_id) DO UPDATE SET
-        status = EXCLUDED.status,
-        assigned_to = EXCLUDED.assigned_to,
-        deadline_solve = EXCLUDED.deadline_solve,
-        solution = EXCLUDED.solution,
-        linked_kb_id = EXCLUDED.linked_kb_id,
-        solution_author = EXCLUDED.solution_author
-    `;
-    
-    await pool.query(query, [
-      ticket.id,
-      ticket.title,
-      ticket.description,
-      ticket.status,
-      ticket.severity,
-      ticket.assignedTo,
-      new Date(ticket.createdAt),
-      ticket.deadlineAssign ? new Date(ticket.deadlineAssign) : null,
-      ticket.deadlineSolve ? new Date(ticket.deadlineSolve) : null,
-      ticket.solution,
-      ticket.linkedKbId,
-      ticket.solutionAuthor,
-      ticket.isCritical,
-      ticket.isTutorial,
-      currentStage,
-      participantParity
-    ]);
-
-    // Save messages
-    if (ticket.messages && ticket.messages.length > 0) {
-      for (const message of ticket.messages) {
-        const msgQuery = `
-          INSERT INTO ticket_messages (ticket_id, message_from, message_text, timestamp)
-          VALUES ($1, $2, $3, $4)
-          ON CONFLICT DO NOTHING
-        `;
-        await pool.query(msgQuery, [
-          ticket.id,
-          message.from,
-          message.text,
-          new Date(message.timestamp)
-        ]);
-      }
-    }
-  } catch (error) {
-    console.error('Error saving ticket to database:', error);
-  }
-};
+// REMOVED: saveTicketToDB function since tickets are not stored in database
 
 // --- LOGIC ---
 
 const spawnTicket = async (isCritical = false, tutorialTicket = false) => {
-  const templates = [
-    { title: 'VPN Not Working From Home', desc: 'Employee cannot connect to the network.' },
-    { title: 'Printer in Accounting Jammed Paper', desc: 'Print queue stalled, red light blinking.' },
-    { title: '1C Crashed During Report', desc: 'Program closes with memory error.' },
-    { title: 'Access Needed to Network Folder', desc: 'Marketing needs access to Z drive.' },
-    { title: 'Outlook Not Receiving Email', desc: 'Last email received 3 hours ago.' }
-  ];
-  const tmpl = templates[Math.floor(Math.random() * templates.length)];
+  const tmpl = ticketTemplates[Math.floor(Math.random() * ticketTemplates.length)];
 
   const newTicket = {
     id: uuidv4(),
@@ -331,8 +271,7 @@ const spawnTicket = async (isCritical = false, tutorialTicket = false) => {
   tickets.push(newTicket);
   io.emit('ticket:new', newTicket);
   
-  // Save to database
-  await saveTicketToDB(newTicket);
+  // REMOVED: Save to database - tickets are not stored
   
   // Для критических тикетов сразу отправляем специальное уведомление
   if (isCritical && !tutorialTicket) {
@@ -415,7 +354,6 @@ const handleAutonomousAI = async (ticket) => {
     message: `AI took ${ticket.isCritical ? '🚨 CRITICAL ' : ''}ticket #${ticket.id.slice(0, 5)} to work`
   });
   io.emit('tickets:update', tickets);
-  await saveTicketToDB(ticket);
 
   const solveTime = ticket.isCritical ? 2000 + Math.random() * 3000 : 3000 + Math.random() * 5000;
   setTimeout(async () => {
@@ -479,7 +417,6 @@ const handleAutonomousAI = async (ticket) => {
             timestamp: Date.now() + 100
           });
           io.emit('tickets:update', tickets);
-          saveTicketToDB(ticket);
         }, 1000);
         
         await writeLog('AI_SOLVED_TICKET', 'AI', { 
@@ -498,7 +435,6 @@ const handleAutonomousAI = async (ticket) => {
       }
       
       io.emit('tickets:update', tickets);
-      await saveTicketToDB(ticket);
     }
   }, solveTime);
 };
@@ -621,7 +557,6 @@ io.on('connection', (socket) => {
       ticket.deadlineSolve = null;
     }
     io.emit('tickets:update', tickets);
-    await saveTicketToDB(ticket);
   });
 
   socket.on('ticket:solve', async (data) => {
@@ -653,7 +588,6 @@ io.on('connection', (socket) => {
     });
 
     io.emit('tickets:update', tickets);
-    await saveTicketToDB(t);
 
     // For tutorial tickets, always show success
     if (t.isTutorial) {
@@ -663,7 +597,6 @@ io.on('connection', (socket) => {
         timestamp: Date.now() + 100
       });
       io.emit('tickets:update', tickets);
-      await saveTicketToDB(t);
       return;
     }
 
@@ -714,7 +647,6 @@ io.on('connection', (socket) => {
       }
 
       io.emit('tickets:update', tickets);
-      await saveTicketToDB(t);
 
     }, 1500);
   });
@@ -806,7 +738,6 @@ io.on('connection', (socket) => {
         stage: currentStage,
         parity: participantParity
       });
-      await saveTicketToDB(ticket);
 
       setTimeout(async () => {
         if (ticket.status === 'in Progress' && ticket.assignedTo === agent.name) {
@@ -828,7 +759,6 @@ io.on('connection', (socket) => {
             stage: currentStage,
             parity: participantParity
           });
-          await saveTicketToDB(ticket);
         }
       }, (ticket.isCritical ? 5000 : 10000) + Math.random() * 5000);
 
@@ -880,8 +810,6 @@ setInterval(async () => {
           ? '🚨 CRITICAL TICKET SOLUTION OVERDUE: Business operations affected!' 
           : 'Solution took too long. Client is dissatisfied!'
       });
-      
-      saveTicketToDB(ticket);
     }
   });
 }, 5000);
@@ -889,19 +817,8 @@ setInterval(async () => {
 // Endpoint for pre-experiment survey questions
 app.get('/api/survey/pre-experiment', (req, res) => {
   try {
-    // Use loaded questions or fallback to default
-    const questions = preExperimentQuestions.length > 0 
-      ? preExperimentQuestions 
-      : [
-          { id: 'pre_1', question: 'What is your age?', type: 'text', required: true, placeholder: 'Enter your age' },
-          { id: 'pre_2', question: 'What is your gender?', type: 'multiple', required: true, options: ['Male', 'Female', 'Other', 'Prefer not to say'] },
-          { id: 'pre_3', question: 'What is your highest level of education?', type: 'multiple', required: true, options: ['High School', 'Bachelor\'s Degree', 'Master\'s Degree', 'PhD', 'Other'] },
-          { id: 'pre_4', question: 'How familiar are you with IT support systems?', type: 'multiple', required: true, options: ['Not familiar at all', 'Slightly familiar', 'Moderately familiar', 'Very familiar', 'Expert'] },
-          { id: 'pre_5', question: 'Have you ever worked in IT support or a similar role?', type: 'multiple', required: true, options: ['Yes, professionally', 'Yes, informally', 'No, never'] }
-        ];
-    
-    console.log(`📊 Sending pre-experiment survey with ${questions.length} questions`);
-    res.json({ questions });
+    console.log(`📊 Sending pre-experiment survey with ${preExperimentQuestions.length} questions`);
+    res.json({ questions: preExperimentQuestions });
   } catch (error) {
     console.error('Error loading pre-experiment survey questions:', error);
     res.status(500).json({ error: 'Failed to load survey questions' });
@@ -919,25 +836,10 @@ app.get('/api/survey/post-experiment', (req, res) => {
     
     let questions = [];
     
-    // Use loaded questions or fallback to default
     if (parity === 'even') {
-      questions = postExperimentQuestions.even && postExperimentQuestions.even.length > 0 
-        ? postExperimentQuestions.even 
-        : [
-            { id: 'post_even_1', question: 'How helpful was the AI assistant?', type: 'multiple', required: true, options: ['Not helpful at all', 'Slightly helpful', 'Moderately helpful', 'Very helpful', 'Extremely helpful'] },
-            { id: 'post_even_2', question: 'Did the AI assistant improve your efficiency?', type: 'multiple', required: true, options: ['Not at all', 'Slightly improved', 'Moderately improved', 'Significantly improved', 'Extremely improved'] },
-            { id: 'post_even_3', question: 'Would you prefer to work with AI assistance in the future?', type: 'multiple', required: true, options: ['Definitely not', 'Probably not', 'Neutral', 'Probably yes', 'Definitely yes'] },
-            { id: 'post_even_4', question: 'What aspects of the AI assistant could be improved?', type: 'text', required: false, placeholder: 'Enter your suggestions' }
-          ];
+      questions = postExperimentQuestions.even;
     } else if (parity === 'odd') {
-      questions = postExperimentQuestions.odd && postExperimentQuestions.odd.length > 0 
-        ? postExperimentQuestions.odd 
-        : [
-            { id: 'post_odd_1', question: 'How helpful were your colleagues?', type: 'multiple', required: true, options: ['Not helpful at all', 'Slightly helpful', 'Moderately helpful', 'Very helpful', 'Extremely helpful'] },
-            { id: 'post_odd_2', question: 'Did working with colleagues improve your efficiency?', type: 'multiple', required: true, options: ['Not at all', 'Slightly improved', 'Moderately improved', 'Significantly improved', 'Extremely improved'] },
-            { id: 'post_odd_3', question: 'Would you prefer to work with colleagues in the future?', type: 'multiple', required: true, options: ['Definitely not', 'Probably not', 'Neutral', 'Probably yes', 'Definitely yes'] },
-            { id: 'post_odd_4', question: 'What aspects of teamwork could be improved?', type: 'text', required: false, placeholder: 'Enter your suggestions' }
-          ];
+      questions = postExperimentQuestions.odd;
     }
     
     console.log(`📊 Sending post-experiment survey for ${parity} parity with ${questions.length} questions`);
@@ -1127,9 +1029,77 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Route for instructions.html
+// Route for instructions.html - serve the actual file
 app.get('/instructions.html', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'instructions.html'));
+  const instructionsPath = path.join(__dirname, 'public', 'instructions.html');
+  
+  if (fs.existsSync(instructionsPath)) {
+    res.sendFile(instructionsPath);
+  } else {
+    // Create a basic instructions file if it doesn't exist
+    const basicInstructions = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Instructions</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; padding: 20px; max-width: 800px; margin: 0 auto; }
+        h1 { color: #333; }
+        h2 { color: #555; margin-top: 30px; }
+        ul { padding-left: 20px; }
+        .section { background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0; }
+        .warning { background: #fff3cd; border: 1px solid #ffc107; padding: 10px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <h1>IT Support System Instructions</h1>
+    
+    <div class="section">
+        <h2>Overview</h2>
+        <p>This system simulates an IT support helpdesk environment where you handle technical support tickets.</p>
+    </div>
+    
+    <div class="section">
+        <h2>Ticket Types</h2>
+        <ul>
+            <li><strong>Tutorial Tickets:</strong> For learning purposes only. No time limit.</li>
+            <li><strong>Normal Tickets:</strong> Regular support requests with time limits.</li>
+            <li><strong>Critical Tickets:</strong> Urgent issues marked with 🚨. Require immediate attention.</li>
+        </ul>
+    </div>
+    
+    <div class="section">
+        <h2>How to Handle Tickets</h2>
+        <ol>
+            <li>Assign tickets to yourself by changing status to "In Progress"</li>
+            <li>Use the Knowledge Base to find solutions</li>
+            <li>For AI-assisted mode: Use "Ask AI" button for suggestions</li>
+            <li>For team mode: Delegate tickets to colleagues</li>
+            <li>Submit your solution and attach relevant KB articles</li>
+        </ol>
+    </div>
+    
+    <div class="warning">
+        <strong>Important:</strong> Pay attention to deadlines! Tickets become overdue if not assigned or solved in time.
+    </div>
+    
+    <div class="section">
+        <h2>Time Limits</h2>
+        <ul>
+            <li><strong>Tutorial:</strong> No time limit</li>
+            <li><strong>Experiment Shift:</strong> 10 minutes total</li>
+            <li><strong>Ticket Assignment:</strong> 2 minutes for normal, 1 minute for critical</li>
+            <li><strong>Ticket Solution:</strong> 5 minutes for normal, 2 minutes for critical</li>
+        </ul>
+    </div>
+</body>
+</html>`;
+    
+    fs.writeFileSync(instructionsPath, basicInstructions);
+    res.sendFile(instructionsPath);
+  }
 });
 
 // Route for all other requests - serve index.html for SPA
@@ -1149,4 +1119,7 @@ server.listen(PORT, () => {
   console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔗 FRONTEND_URL: ${process.env.FRONTEND_URL || 'http://localhost:3000'}`);
   console.log(`📊 Database connected: ${process.env.DATABASE_URL ? 'Yes' : 'No'}`);
+  console.log(`📁 Loaded ${preExperimentQuestions.length} pre-experiment questions`);
+  console.log(`📁 Loaded ${ticketTemplates.length} ticket templates`);
+  console.log(`📁 Loaded ${kbArticles.length} KB articles`);
 });

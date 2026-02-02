@@ -21,5 +21,5 @@ services:
 databases:
   - name: experiment-db
     plan: free
-    databaseName: experiment_db
+    databaseName: experiment_k9jl
     user: experiment_user

@@ -4,7 +4,6 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
 const { Pool } = require('pg');
-const path = require('path');
 const fs = require('fs');
 const path = require('path');
 

@@ -14,7 +14,7 @@ services:
       - key: PORT
         value: 10000
       - key: FRONTEND_URL
-        value: https://itsm-frontend.onrender.com  # Замените на ваш фронтенд URL
+        value: https://itsm-frontend.onrender.com
     healthCheckPath: /health
     autoDeploy: true
 

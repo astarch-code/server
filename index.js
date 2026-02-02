@@ -5,6 +5,8 @@ const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
 const { Pool } = require('pg');
 const path = require('path');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 
@@ -14,6 +16,33 @@ const allowedOrigins = process.env.FRONTEND_URL
   : ['http://localhost:3000', 'http://localhost:5173'];
 
 console.log('Allowed CORS origins:', allowedOrigins);
+
+// --- Load survey questions from JSON files ---
+let preExperimentQuestions = [];
+let postExperimentQuestions = { even: [], odd: [] };
+
+try {
+  const preExperimentPath = path.join(__dirname, 'data', 'pre-experiment-survey.json');
+  const postExperimentPath = path.join(__dirname, 'data', 'post-experiment-survey.json');
+  
+  if (fs.existsSync(preExperimentPath)) {
+    const data = fs.readFileSync(preExperimentPath, 'utf8');
+    preExperimentQuestions = JSON.parse(data);
+    console.log('✅ Loaded pre-experiment survey questions from file');
+  } else {
+    console.log('⚠️ pre-experiment-survey.json not found, using default questions');
+  }
+  
+  if (fs.existsSync(postExperimentPath)) {
+    const data = fs.readFileSync(postExperimentPath, 'utf8');
+    postExperimentQuestions = JSON.parse(data);
+    console.log('✅ Loaded post-experiment survey questions from file');
+  } else {
+    console.log('⚠️ post-experiment-survey.json not found, using default questions');
+  }
+} catch (error) {
+  console.error('❌ Error loading survey questions from files:', error);
+}
 
 app.use(cors({
   origin: function (origin, callback) {
@@ -43,7 +72,6 @@ const io = new Server(server, {
     methods: ["GET", "POST"],
     credentials: true
   },
-  // Настройки для работы за прокси на Render
   transports: ['websocket', 'polling'],
   pingTimeout: 60000,
   pingInterval: 25000
@@ -862,13 +890,18 @@ setInterval(async () => {
 // Endpoint for pre-experiment survey questions
 app.get('/api/survey/pre-experiment', (req, res) => {
   try {
-    const questions = [
-      { id: 'pre_1', question: 'What is your age?', type: 'text', required: true, placeholder: 'Enter your age' },
-      { id: 'pre_2', question: 'What is your gender?', type: 'multiple', required: true, options: ['Male', 'Female', 'Other', 'Prefer not to say'] },
-      { id: 'pre_3', question: 'What is your highest level of education?', type: 'multiple', required: true, options: ['High School', 'Bachelor\'s Degree', 'Master\'s Degree', 'PhD', 'Other'] },
-      { id: 'pre_4', question: 'How familiar are you with IT support systems?', type: 'multiple', required: true, options: ['Not familiar at all', 'Slightly familiar', 'Moderately familiar', 'Very familiar', 'Expert'] },
-      { id: 'pre_5', question: 'Have you ever worked in IT support or a similar role?', type: 'multiple', required: true, options: ['Yes, professionally', 'Yes, informally', 'No, never'] }
-    ];
+    // Use loaded questions or fallback to default
+    const questions = preExperimentQuestions.length > 0 
+      ? preExperimentQuestions 
+      : [
+          { id: 'pre_1', question: 'What is your age?', type: 'text', required: true, placeholder: 'Enter your age' },
+          { id: 'pre_2', question: 'What is your gender?', type: 'multiple', required: true, options: ['Male', 'Female', 'Other', 'Prefer not to say'] },
+          { id: 'pre_3', question: 'What is your highest level of education?', type: 'multiple', required: true, options: ['High School', 'Bachelor\'s Degree', 'Master\'s Degree', 'PhD', 'Other'] },
+          { id: 'pre_4', question: 'How familiar are you with IT support systems?', type: 'multiple', required: true, options: ['Not familiar at all', 'Slightly familiar', 'Moderately familiar', 'Very familiar', 'Expert'] },
+          { id: 'pre_5', question: 'Have you ever worked in IT support or a similar role?', type: 'multiple', required: true, options: ['Yes, professionally', 'Yes, informally', 'No, never'] }
+        ];
+    
+    console.log(`📊 Sending pre-experiment survey with ${questions.length} questions`);
     res.json({ questions });
   } catch (error) {
     console.error('Error loading pre-experiment survey questions:', error);
@@ -881,26 +914,34 @@ app.get('/api/survey/post-experiment', (req, res) => {
   try {
     const { parity } = req.query;
     
-    let questions = [];
-    
-    if (parity === 'even') {
-      questions = [
-        { id: 'post_even_1', question: 'How helpful was the AI assistant?', type: 'multiple', required: true, options: ['Not helpful at all', 'Slightly helpful', 'Moderately helpful', 'Very helpful', 'Extremely helpful'] },
-        { id: 'post_even_2', question: 'Did the AI assistant improve your efficiency?', type: 'multiple', required: true, options: ['Not at all', 'Slightly improved', 'Moderately improved', 'Significantly improved', 'Extremely improved'] },
-        { id: 'post_even_3', question: 'Would you prefer to work with AI assistance in the future?', type: 'multiple', required: true, options: ['Definitely not', 'Probably not', 'Neutral', 'Probably yes', 'Definitely yes'] },
-        { id: 'post_even_4', question: 'What aspects of the AI assistant could be improved?', type: 'text', required: false, placeholder: 'Enter your suggestions' }
-      ];
-    } else if (parity === 'odd') {
-      questions = [
-        { id: 'post_odd_1', question: 'How helpful were your colleagues?', type: 'multiple', required: true, options: ['Not helpful at all', 'Slightly helpful', 'Moderately helpful', 'Very helpful', 'Extremely helpful'] },
-        { id: 'post_odd_2', question: 'Did working with colleagues improve your efficiency?', type: 'multiple', required: true, options: ['Not at all', 'Slightly improved', 'Moderately improved', 'Significantly improved', 'Extremely improved'] },
-        { id: 'post_odd_3', question: 'Would you prefer to work with colleagues in the future?', type: 'multiple', required: true, options: ['Definitely not', 'Probably not', 'Neutral', 'Probably yes', 'Definitely yes'] },
-        { id: 'post_odd_4', question: 'What aspects of teamwork could be improved?', type: 'text', required: false, placeholder: 'Enter your suggestions' }
-      ];
-    } else {
-      return res.status(400).json({ error: 'Missing or invalid parity parameter' });
+    if (!parity || !['even', 'odd'].includes(parity)) {
+      return res.status(400).json({ error: 'Missing or invalid parity parameter. Must be "even" or "odd"' });
     }
     
+    let questions = [];
+    
+    // Use loaded questions or fallback to default
+    if (parity === 'even') {
+      questions = postExperimentQuestions.even && postExperimentQuestions.even.length > 0 
+        ? postExperimentQuestions.even 
+        : [
+            { id: 'post_even_1', question: 'How helpful was the AI assistant?', type: 'multiple', required: true, options: ['Not helpful at all', 'Slightly helpful', 'Moderately helpful', 'Very helpful', 'Extremely helpful'] },
+            { id: 'post_even_2', question: 'Did the AI assistant improve your efficiency?', type: 'multiple', required: true, options: ['Not at all', 'Slightly improved', 'Moderately improved', 'Significantly improved', 'Extremely improved'] },
+            { id: 'post_even_3', question: 'Would you prefer to work with AI assistance in the future?', type: 'multiple', required: true, options: ['Definitely not', 'Probably not', 'Neutral', 'Probably yes', 'Definitely yes'] },
+            { id: 'post_even_4', question: 'What aspects of the AI assistant could be improved?', type: 'text', required: false, placeholder: 'Enter your suggestions' }
+          ];
+    } else if (parity === 'odd') {
+      questions = postExperimentQuestions.odd && postExperimentQuestions.odd.length > 0 
+        ? postExperimentQuestions.odd 
+        : [
+            { id: 'post_odd_1', question: 'How helpful were your colleagues?', type: 'multiple', required: true, options: ['Not helpful at all', 'Slightly helpful', 'Moderately helpful', 'Very helpful', 'Extremely helpful'] },
+            { id: 'post_odd_2', question: 'Did working with colleagues improve your efficiency?', type: 'multiple', required: true, options: ['Not at all', 'Slightly improved', 'Moderately improved', 'Significantly improved', 'Extremely improved'] },
+            { id: 'post_odd_3', question: 'Would you prefer to work with colleagues in the future?', type: 'multiple', required: true, options: ['Definitely not', 'Probably not', 'Neutral', 'Probably yes', 'Definitely yes'] },
+            { id: 'post_odd_4', question: 'What aspects of teamwork could be improved?', type: 'text', required: false, placeholder: 'Enter your suggestions' }
+          ];
+    }
+    
+    console.log(`📊 Sending post-experiment survey for ${parity} parity with ${questions.length} questions`);
     res.json({ questions });
   } catch (error) {
     console.error('Error loading post-experiment survey questions:', error);

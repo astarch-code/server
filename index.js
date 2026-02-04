@@ -208,7 +208,7 @@ const sessions = new Map(); // Key: participantId, Value: session object
 const getOrCreateSession = (participantId, participantParity) => {
   if (!sessions.has(participantId)) {
     console.log(`🆕 Creating new session for participant: ${participantId} (${participantParity})`);
-    
+
     const newSession = {
       participantId,
       participantParity,
@@ -222,11 +222,11 @@ const getOrCreateSession = (participantId, participantParity) => {
       botCheckInterval: null,
       socketConnections: new Set() // Store socket IDs connected to this session
     };
-    
+
     sessions.set(participantId, newSession);
     return newSession;
   }
-  
+
   return sessions.get(participantId);
 };
 
@@ -251,7 +251,7 @@ const cleanupSession = (participantId) => {
       clearInterval(session.botCheckInterval);
       console.log(`🛑 Cleared bot check interval for ${participantId}`);
     }
-    
+
     // Remove session
     sessions.delete(participantId);
     console.log(`🗑️ Cleaned up session for ${participantId}`);
@@ -327,7 +327,7 @@ const spawnTicketForSession = async (session, isCritical = false, tutorialTicket
 
   session.tickets.push(newTicket);
   console.log(`📊 Ticket added to session ${session.participantId}. Total tickets: ${session.tickets.length}`);
-  
+
   // Emit to all sockets connected to this session
   session.socketConnections.forEach(socketId => {
     const socket = io.sockets.sockets.get(socketId);
@@ -399,7 +399,7 @@ const handleAutonomousAIForSession = async (session, ticket) => {
       parity: session.participantParity,
       isCritical: ticket.isCritical
     });
-    
+
     session.socketConnections.forEach(socketId => {
       const socket = io.sockets.sockets.get(socketId);
       if (socket) {
@@ -410,7 +410,7 @@ const handleAutonomousAIForSession = async (session, ticket) => {
         });
       }
     });
-    
+
     return;
   }
 
@@ -511,7 +511,7 @@ const handleAutonomousAIForSession = async (session, ticket) => {
               : 'Thank you, problem solved!',
             timestamp: Date.now() + 100
           });
-          
+
           session.socketConnections.forEach(socketId => {
             const socket = io.sockets.sockets.get(socketId);
             if (socket) {
@@ -611,7 +611,7 @@ const startBotLifecycleForSession = (session) => {
 
   if (session.currentStage === 2 && session.participantParity === 'odd') {
     console.log(`🤖 Starting bot lifecycle for session ${session.participantId}`);
-    
+
     session.botCheckInterval = setInterval(() => {
       let changed = false;
 
@@ -693,21 +693,21 @@ io.on('connection', (socket) => {
 
   socket.on('request:init', (data) => {
     console.log('📥 Received init request:', data);
-    
+
     const { participantId, participantParity } = data;
-    
+
     if (!participantId) {
       console.error('❌ No participantId provided in init request');
       return;
     }
 
     const session = getOrCreateSession(participantId, participantParity);
-    
+
     // Add socket to session connections
     session.socketConnections.add(socket.id);
-    
+
     console.log(`🔗 Socket ${socket.id} connected to session ${participantId}. Total connections: ${session.socketConnections.size}`);
-    
+
     // Send session data to the socket
     socket.emit('init', {
       tickets: session.tickets,
@@ -750,7 +750,7 @@ io.on('connection', (socket) => {
       ticket.assignedTo = null;
       ticket.deadlineSolve = null;
     }
-    
+
     // Emit update to all sockets in this session
     session.socketConnections.forEach(socketId => {
       const sock = io.sockets.sockets.get(socketId);
@@ -809,14 +809,14 @@ io.on('connection', (socket) => {
         text: 'Thank you! The problem is solved!',
         timestamp: Date.now() + 100
       });
-      
+
       session.socketConnections.forEach(socketId => {
         const sock = io.sockets.sockets.get(socketId);
         if (sock) {
           sock.emit('tickets:update', session.tickets);
         }
       });
-      
+
       return;
     }
 
@@ -983,14 +983,14 @@ io.on('connection', (socket) => {
       ticket.status = 'in Progress';
       ticket.assignedTo = agent.name;
       ticket.deadlineSolve = Date.now() + (ticket.isCritical ? 120000 : 300000);
-      
+
       session.socketConnections.forEach(socketId => {
         const sock = io.sockets.sockets.get(socketId);
         if (sock) {
           sock.emit('tickets:update', session.tickets);
         }
       });
-      
+
       await writeLog('BOT_ACCEPT', agent.name, {
         ticketId,
         participantId: session.participantId,
@@ -1018,7 +1018,7 @@ io.on('connection', (socket) => {
               });
             }
           });
-          
+
           await writeLog('BOT_SOLVE', agent.name, {
             ticketId,
             participantId: session.participantId,
@@ -1037,7 +1037,7 @@ io.on('connection', (socket) => {
       if (session.socketConnections.has(socket.id)) {
         session.socketConnections.delete(socket.id);
         console.log(`🔌 Socket ${socket.id} disconnected from session ${participantId}. Remaining connections: ${session.socketConnections.size}`);
-        
+
         // If no more connections, optionally cleanup session after some time
         if (session.socketConnections.size === 0) {
           console.log(`⏳ Session ${participantId} has no connections. Will be cleaned up in 5 minutes if no reconnection.`);
@@ -1050,7 +1050,7 @@ io.on('connection', (socket) => {
         break;
       }
     }
-    
+
     console.log(`❌ Client disconnected: ${socket.id}`);
   });
 });
@@ -1058,7 +1058,7 @@ io.on('connection', (socket) => {
 // Global interval for checking ticket deadlines (runs for all sessions)
 setInterval(() => {
   const now = Date.now();
-  
+
   for (const [participantId, session] of sessions) {
     session.tickets.forEach(ticket => {
       // Skip tutorial tickets for overdue checks
@@ -1071,7 +1071,7 @@ setInterval(() => {
         !ticket.assignOverdueReported
       ) {
         ticket.assignOverdueReported = true;
-        
+
         session.socketConnections.forEach(socketId => {
           const socket = io.sockets.sockets.get(socketId);
           if (socket) {
@@ -1101,7 +1101,7 @@ setInterval(() => {
             : 'You took too long to respond. Client is dissatisfied.',
           timestamp: Date.now()
         });
-        
+
         session.socketConnections.forEach(socketId => {
           const socket = io.sockets.sockets.get(socketId);
           if (socket) {
@@ -1268,7 +1268,7 @@ app.post('/admin/start', async (req, res) => {
   }
 
   const session = getOrCreateSession(participantId, parity);
-  
+
   session.currentStage = stage;
   session.currentAiMode = aiMode || 'normal';
 
@@ -1303,7 +1303,7 @@ app.post('/admin/start', async (req, res) => {
       // For odd participants (work with colleagues) bots should be online
       session.agents.forEach(a => a.status = 'online');
       console.log(`👥 Setting bots to online for odd participant ${participantId}`);
-      
+
       // Start bot lifecycle for this session
       startBotLifecycleForSession(session);
     } else {
@@ -1360,16 +1360,16 @@ app.post('/admin/start', async (req, res) => {
 // Endpoint to spawn tutorial ticket
 app.post('/admin/tutorial/ticket', async (req, res) => {
   const { participantId } = req.body;
-  
+
   if (!participantId) {
     return res.status(400).json({ error: 'Missing participantId' });
   }
-  
+
   const session = sessions.get(participantId);
   if (!session) {
     return res.status(404).json({ error: 'Session not found' });
   }
-  
+
   const tutorialTicket = await spawnTicketForSession(session, false, true);
   res.json({
     success: true,
@@ -1380,16 +1380,16 @@ app.post('/admin/tutorial/ticket', async (req, res) => {
 
 app.post('/admin/critical', async (req, res) => {
   const { participantId } = req.body;
-  
+
   if (!participantId) {
     return res.status(400).json({ error: 'Missing participantId' });
   }
-  
+
   const session = sessions.get(participantId);
   if (!session) {
     return res.status(404).json({ error: 'Session not found' });
   }
-  
+
   const criticalTicket = await spawnTicketForSession(session, true);
   res.json({
     success: true,
@@ -1401,7 +1401,7 @@ app.post('/admin/critical', async (req, res) => {
 // Debug endpoint to check server state
 app.get('/debug', (req, res) => {
   const sessionsData = {};
-  
+
   for (const [participantId, session] of sessions) {
     sessionsData[participantId] = {
       participantParity: session.participantParity,
@@ -1416,7 +1416,7 @@ app.get('/debug', (req, res) => {
       socketConnections: session.socketConnections.size
     };
   }
-  
+
   res.json({
     totalSessions: sessions.size,
     sessions: sessionsData,
@@ -1510,14 +1510,14 @@ app.get('/instructions.html', (req, res) => {
 
 // Route for all other requests - serve index.html for SPA
 app.get('*', (req, res) => {
-/*   if (req.path.startsWith('/api/')) {
+  if (req.path.startsWith('/api/')) {
     res.status(404).json({ error: 'API endpoint not found' });
-  } else  */
+  } else
     if (req.path === '/instructions.html') {
-    res.sendFile(path.join(__dirname, 'public', 'instructions.html'));
-  } else {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-  }
+      res.sendFile(path.join(__dirname, 'public', 'instructions.html'));
+    } else {
+      res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    }
 });
 
 // Endpoint for resetting participant data
@@ -1539,8 +1539,8 @@ app.post('/api/reset-participant', async (req, res) => {
       timestamp: new Date().toISOString()
     });
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       message: `Participant ${participantId} data has been reset`
     });
   } catch (error) {

@@ -10,7 +10,7 @@ const path = require('path');
 const app = express();
 
 // --- CORS Configuration ---
-const allowedOrigins = process.env.FRONTEND_URL 
+const allowedOrigins = process.env.FRONTEND_URL
   ? [process.env.FRONTEND_URL, 'http://localhost:3000']
   : ['http://localhost:3000', 'http://localhost:5173'];
 
@@ -29,7 +29,7 @@ function loadDataFromJson() {
     const postExperimentPath = path.join(__dirname, 'data', 'post-experiment-survey.json');
     const ticketTemplatesPath = path.join(__dirname, 'data', 'ticket-templates.json');
     const kbArticlesPath = path.join(__dirname, 'data', 'kb-articles.json');
-    
+
     if (fs.existsSync(preExperimentPath)) {
       const data = fs.readFileSync(preExperimentPath, 'utf8');
       preExperimentQuestions = JSON.parse(data);
@@ -44,7 +44,7 @@ function loadDataFromJson() {
         { id: 'pre_5', question: 'Have you ever worked in IT support or a similar role?', type: 'multiple', required: true, options: ['Yes, professionally', 'Yes, informally', 'No, never'] }
       ];
     }
-    
+
     if (fs.existsSync(postExperimentPath)) {
       const data = fs.readFileSync(postExperimentPath, 'utf8');
       postExperimentQuestions = JSON.parse(data);
@@ -66,7 +66,7 @@ function loadDataFromJson() {
         ]
       };
     }
-    
+
     if (fs.existsSync(ticketTemplatesPath)) {
       const data = fs.readFileSync(ticketTemplatesPath, 'utf8');
       ticketTemplates = JSON.parse(data);
@@ -81,7 +81,7 @@ function loadDataFromJson() {
         { title: 'Outlook Not Receiving Email', desc: 'Last email received 3 hours ago.' }
       ];
     }
-    
+
     if (fs.existsSync(kbArticlesPath)) {
       const data = fs.readFileSync(kbArticlesPath, 'utf8');
       kbArticles = JSON.parse(data);
@@ -107,7 +107,7 @@ app.use(cors({
   origin: function (origin, callback) {
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
-    
+
     if (allowedOrigins.indexOf(origin) === -1) {
       const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
       return callback(new Error(msg), false);
@@ -125,8 +125,8 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 const server = http.createServer(app);
-const io = new Server(server, { 
-  cors: { 
+const io = new Server(server, {
+  cors: {
     origin: allowedOrigins,
     methods: ["GET", "POST"],
     credentials: true
@@ -246,7 +246,16 @@ const savePostExperimentResponse = async (participantId, parity, questionId, que
 // --- LOGIC ---
 
 const spawnTicket = async (isCritical = false, tutorialTicket = false) => {
+  // Убедитесь, что ticketTemplates загружены
+  if (!ticketTemplates || ticketTemplates.length === 0) {
+    console.error('❌ No ticket templates loaded!');
+    return null;
+  }
+
   const tmpl = ticketTemplates[Math.floor(Math.random() * ticketTemplates.length)];
+
+  // Логи для отладки
+  console.log(`🎫 Spawning ${isCritical ? 'CRITICAL ' : ''}ticket from template: "${tmpl.title}"`);
 
   const newTicket = {
     id: uuidv4(),
@@ -270,20 +279,20 @@ const spawnTicket = async (isCritical = false, tutorialTicket = false) => {
   };
 
   tickets.push(newTicket);
+  console.log(`📊 Ticket added to array. Total tickets: ${tickets.length}`);
   io.emit('ticket:new', newTicket);
-  
-  console.log(`🎫 Spawned ${tutorialTicket ? 'tutorial' : ''} ticket: ${newTicket.title} (Critical: ${isCritical})`);
-  
+
   // Для критических тикетов сразу отправляем специальное уведомление
   if (isCritical && !tutorialTicket) {
+    console.log(`🚨 Sending critical notification for ticket: ${newTicket.id}`);
     io.emit('client:notification', {
       type: 'critical',
       message: '🚨 CRITICAL TICKET: Server Down! Immediate action required! Business impact!'
     });
   }
-  
-  await writeLog('TICKET_SPAWN', 'System', { 
-    ticketId: newTicket.id, 
+
+  await writeLog('TICKET_SPAWN', 'System', {
+    ticketId: newTicket.id,
     aiMode: currentAiMode,
     stage: currentStage,
     parity: participantParity,
@@ -309,7 +318,7 @@ const spawnTicket = async (isCritical = false, tutorialTicket = false) => {
       });
     }, 2000);
   }
-  
+
   return newTicket;
 };
 
@@ -317,15 +326,15 @@ const handleAutonomousAI = async (ticket) => {
   if (ticket.status !== 'not assigned') return;
 
   if (Math.random() * 100 < AUTONOMOUS_AI_CONFIG.missProbability) {
-    await writeLog('AI_MISSED_TICKET', 'AI', { 
-      ticketId: ticket.id, 
+    await writeLog('AI_MISSED_TICKET', 'AI', {
+      ticketId: ticket.id,
       probability: AUTONOMOUS_AI_CONFIG.missProbability,
       stage: currentStage,
       parity: participantParity,
       isCritical: ticket.isCritical
     });
-    io.emit('ai:autonomous_action', { 
-      type: 'missed', 
+    io.emit('ai:autonomous_action', {
+      type: 'missed',
       ticketId: ticket.id,
       message: `AI missed ${ticket.isCritical ? 'CRITICAL ' : ''}ticket`
     });
@@ -342,15 +351,15 @@ const handleAutonomousAI = async (ticket) => {
     timestamp: Date.now()
   });
 
-  await writeLog('AI_TOOK_TICKET', 'AI', { 
+  await writeLog('AI_TOOK_TICKET', 'AI', {
     ticketId: ticket.id,
     stage: currentStage,
     parity: participantParity,
     isCritical: ticket.isCritical
   });
-  
-  io.emit('ai:autonomous_action', { 
-    type: 'taken', 
+
+  io.emit('ai:autonomous_action', {
+    type: 'taken',
     ticketId: ticket.id,
     message: `AI took ${ticket.isCritical ? '🚨 CRITICAL ' : ''}ticket #${ticket.id.slice(0, 5)} to work`
   });
@@ -360,7 +369,7 @@ const handleAutonomousAI = async (ticket) => {
   setTimeout(async () => {
     if (ticket.status === 'in Progress' && ticket.assignedTo === 'AI') {
       const willFail = Math.random() * 100 < AUTONOMOUS_AI_CONFIG.failProbability;
-      
+
       if (willFail) {
         ticket.status = 'not assigned';
         ticket.assignedTo = null;
@@ -370,77 +379,78 @@ const handleAutonomousAI = async (ticket) => {
           text: ticket.isCritical ? '🚨 CRITICAL TICKET: AI failed to solve. URGENT HUMAN INTERVENTION NEEDED!' : 'AI failed to solve ticket. Returning to queue.',
           timestamp: Date.now()
         });
-        
-        await writeLog('AI_FAILED_TICKET', 'AI', { 
-          ticketId: ticket.id, 
+
+        await writeLog('AI_FAILED_TICKET', 'AI', {
+          ticketId: ticket.id,
           probability: AUTONOMOUS_AI_CONFIG.failProbability,
           stage: currentStage,
           parity: participantParity,
           isCritical: ticket.isCritical
         });
-        
-        io.emit('ai:autonomous_action', { 
-          type: 'failed', 
+
+        io.emit('ai:autonomous_action', {
+          type: 'failed',
           ticketId: ticket.id,
           message: `AI failed to solve ${ticket.isCritical ? '🚨 CRITICAL ' : ''}ticket #${ticket.id.slice(0, 5)}`
         });
       } else {
         ticket.status = 'solved';
-        ticket.solution = ticket.isCritical 
+        ticket.solution = ticket.isCritical
           ? `🚨 CRITICAL RESOLVED: Server restarted and services restored. Root cause: hardware failure in power supply unit.`
           : `Solved by autonomous AI based on problem analysis: ${ticket.title}`;
         ticket.solutionAuthor = 'AI';
-        
+
         const keywords = ticket.title.toLowerCase().split(' ');
-        const foundKb = kbArticles.find(k => 
+        const foundKb = kbArticles.find(k =>
           keywords.some(word => word.length > 3 && k.title.toLowerCase().includes(word))
         );
-        
+
         if (foundKb) {
           ticket.linkedKbId = foundKb.id;
           ticket.solution += ` (used article: ${foundKb.title})`;
         }
-        
+
         ticket.messages.push({
           from: 'AI',
-          text: ticket.isCritical 
+          text: ticket.isCritical
             ? `🚨 CRITICAL TICKET RESOLVED: Server back online. All services restored.`
             : `Ticket solved. ${foundKb ? `Used article: ${foundKb.title}` : 'Solution found without knowledge base'}`,
           timestamp: Date.now()
         });
-        
+
         setTimeout(() => {
           ticket.messages.push({
             from: 'client',
-            text: ticket.isCritical 
-              ? '🚨 Thank you for quick response! Business operations restored.' 
+            text: ticket.isCritical
+              ? '🚨 Thank you for quick response! Business operations restored.'
               : 'Thank you, problem solved!',
             timestamp: Date.now() + 100
           });
           io.emit('tickets:update', tickets);
         }, 1000);
-        
-        await writeLog('AI_SOLVED_TICKET', 'AI', { 
-          ticketId: ticket.id, 
+
+        await writeLog('AI_SOLVED_TICKET', 'AI', {
+          ticketId: ticket.id,
           kbId: ticket.linkedKbId,
           stage: currentStage,
           parity: participantParity,
           isCritical: ticket.isCritical
         });
-        
-        io.emit('ai:autonomous_action', { 
-          type: 'solved', 
+
+        io.emit('ai:autonomous_action', {
+          type: 'solved',
           ticketId: ticket.id,
           message: `AI successfully solved ${ticket.isCritical ? '🚨 CRITICAL ' : ''}ticket #${ticket.id.slice(0, 5)}`
         });
       }
-      
+
       io.emit('tickets:update', tickets);
     }
   }, solveTime);
 };
 
 // Start/stop ticket spawning based on stage
+// Замените существующий интервал на этот:
 const startTicketSpawning = () => {
   // Clear existing interval if any
   if (spawnInterval) {
@@ -450,20 +460,35 @@ const startTicketSpawning = () => {
 
   if (currentStage === 2) {
     console.log('🚀 Starting ticket spawning for stage 2');
-    spawnInterval = setInterval(async () => { 
+
+    // Запускаем спаун тикетов с фиксированной логикой
+    spawnInterval = setInterval(async () => {
       console.log(`🎲 Checking to spawn ticket (stage: ${currentStage}, parity: ${participantParity})`);
-      
-      if (currentStage === 2 && Math.random() > 0.7) {
+
+      // Проверяем условие для спауна тикета (30% вероятность)
+      if (Math.random() > 0.7) {
         // Проверяем, прошла ли половина времени смены
         const timeElapsed = Date.now() - stageStartTime;
         const isSecondHalf = stageStartTime && stageDuration && timeElapsed > (stageDuration / 2);
-        
+
+        console.log(`⏱️ Time elapsed: ${timeElapsed}ms, isSecondHalf: ${isSecondHalf}`);
+
         // Критические тикеты спаунятся только во второй половине времени смены
-        const isCritical = isSecondHalf && Math.random() < 0.1;
+        let isCritical = false;
+
+        // Проверяем условия для критического тикета
+        if (isSecondHalf) {
+          // Во второй половине - 40% вероятность критического тикета
+          isCritical = Math.random() < 0.4;
+          console.log(`🎯 Critical chance check: ${isCritical ? 'CRITICAL' : 'normal'} (random: ${Math.random()})`);
+        }
+
         console.log(`🎯 Spawning ${isCritical ? 'CRITICAL ' : ''}ticket in stage 2`);
         await spawnTicket(isCritical);
       }
-    }, 8000);
+    }, 8000); // Каждые 8 секунд
+
+    console.log(`✅ Ticket spawning interval started (every 8s)`);
   }
 };
 
@@ -485,7 +510,7 @@ setInterval(async () => {
     if (agent.status === 'online') {
       if (Math.random() < BOT_LIFECYCLE_CONFIG.leaveProbability) {
         agent.status = 'away';
-        writeLog('BOT_STATUS_CHANGE', agent.name, { 
+        writeLog('BOT_STATUS_CHANGE', agent.name, {
           status: 'away',
           stage: currentStage,
           parity: participantParity
@@ -495,7 +520,7 @@ setInterval(async () => {
     } else if (agent.status === 'away') {
       if (Math.random() < BOT_LIFECYCLE_CONFIG.returnProbability) {
         agent.status = 'online';
-        writeLog('BOT_STATUS_CHANGE', agent.name, { 
+        writeLog('BOT_STATUS_CHANGE', agent.name, {
           status: 'online',
           stage: currentStage,
           parity: participantParity
@@ -545,11 +570,11 @@ io.on('connection', (socket) => {
     if (data && data.participantParity) {
       participantParity = data.participantParity;
     }
-    socket.emit('init', { 
-      tickets, 
-      kbArticles, 
-      agents, 
-      currentStage, 
+    socket.emit('init', {
+      tickets,
+      kbArticles,
+      agents,
+      currentStage,
       aiMode: currentAiMode,
       participantParity
     });
@@ -567,8 +592,8 @@ io.on('connection', (socket) => {
       if (!ticket.isTutorial) {
         ticket.deadlineSolve = Date.now() + (ticket.isCritical ? 120000 : 300000);
       }
-      await writeLog('TICKET_TAKEN', 'participant', { 
-        ticketId, 
+      await writeLog('TICKET_TAKEN', 'participant', {
+        ticketId,
         aiMode: currentAiMode,
         stage: currentStage,
         parity: participantParity,
@@ -591,9 +616,9 @@ io.on('connection', (socket) => {
     t.linkedKbId = data.linkedKbId;
     t.solutionAuthor = 'participant';
 
-    await writeLog('TICKET_SOLVE', 'participant', { 
-      ticketId: t.id, 
-      kb: data.linkedKbId, 
+    await writeLog('TICKET_SOLVE', 'participant', {
+      ticketId: t.id,
+      kb: data.linkedKbId,
       aiMode: currentAiMode,
       stage: currentStage,
       parity: participantParity,
@@ -604,7 +629,7 @@ io.on('connection', (socket) => {
     t.messages = t.messages || [];
     t.messages.push({
       from: 'agent',
-      text: t.isCritical 
+      text: t.isCritical
         ? `🚨 CRITICAL SOLUTION: ${data.solution}` + (data.linkedKbId ? ` (KB: ${data.linkedKbId})` : '')
         : `Solution: ${data.solution}` + (data.linkedKbId ? ` (KB: ${data.linkedKbId})` : ''),
       timestamp: Date.now()
@@ -657,8 +682,8 @@ io.on('connection', (socket) => {
 
         t.messages.push({
           from: 'system',
-          text: t.isCritical 
-            ? '🚨 CRITICAL TICKET RETURNED: Immediate action required!' 
+          text: t.isCritical
+            ? '🚨 CRITICAL TICKET RETURNED: Immediate action required!'
             : 'TICKET RETURNED: Client not satisfied with solution.',
           timestamp: Date.now() + 10
         });
@@ -677,7 +702,7 @@ io.on('connection', (socket) => {
   socket.on('ai:ask', ({ ticketId }) => {
     // AI available only at stage 2 for even participants
     if (currentStage !== 2 || participantParity !== 'even') return;
-    
+
     const ticket = tickets.find(t => t.id === ticketId);
     if (!ticket) return;
 
@@ -689,16 +714,16 @@ io.on('connection', (socket) => {
 
     if (foundKb) {
       const firstSentence = foundKb.content.split('.')[0] + '.';
-      responseText = ticket.isCritical 
-        ? `🚨 CRITICAL TICKET: Found article "${foundKb.title}". URGENT: ${firstSentence}` 
+      responseText = ticket.isCritical
+        ? `🚨 CRITICAL TICKET: Found article "${foundKb.title}". URGENT: ${firstSentence}`
         : `Found relevant article "${foundKb.title}". Advice: ${firstSentence}`;
       foundKbId = foundKb.id;
     }
 
     socket.emit('ai:response', { ticketId, text: responseText, kbId: foundKbId });
-    writeLog('AI_ASK', 'participant', { 
-      ticketId, 
-      found: !!foundKb, 
+    writeLog('AI_ASK', 'participant', {
+      ticketId,
+      found: !!foundKb,
       aiMode: currentAiMode,
       stage: currentStage,
       parity: participantParity,
@@ -709,7 +734,7 @@ io.on('connection', (socket) => {
   socket.on('bot:delegate', async ({ ticketId, botId }) => {
     // Delegation available only at stage 2 for odd participants
     if (currentStage !== 2 || participantParity !== 'odd') return;
-    
+
     const ticket = tickets.find(t => t.id === ticketId);
     const agent = agents.find(a => a.id === botId);
 
@@ -720,9 +745,9 @@ io.on('connection', (socket) => {
       return;
     }
 
-    await writeLog('DELEGATE_REQUEST', 'participant', { 
-      ticketId, 
-      bot: agent.name, 
+    await writeLog('DELEGATE_REQUEST', 'participant', {
+      ticketId,
+      bot: agent.name,
       aiMode: currentAiMode,
       stage: currentStage,
       parity: participantParity,
@@ -734,14 +759,14 @@ io.on('connection', (socket) => {
         const isIgnore = Math.random() > 0.5;
         if (isIgnore) {
           socket.emit('bot:notification', { botName: agent.name, message: "read, but didn't respond.", type: 'warning' });
-          writeLog('BOT_IGNORE', agent.name, { 
+          writeLog('BOT_IGNORE', agent.name, {
             ticketId,
             stage: currentStage,
             parity: participantParity
           });
         } else {
           socket.emit('bot:notification', { botName: agent.name, message: "refused: «I'm busy»", type: 'error' });
-          writeLog('BOT_REFUSAL', agent.name, { 
+          writeLog('BOT_REFUSAL', agent.name, {
             ticketId,
             stage: currentStage,
             parity: participantParity
@@ -756,7 +781,7 @@ io.on('connection', (socket) => {
       ticket.assignedTo = agent.name;
       ticket.deadlineSolve = Date.now() + (ticket.isCritical ? 120000 : 300000);
       io.emit('tickets:update', tickets);
-      await writeLog('BOT_ACCEPT', agent.name, { 
+      await writeLog('BOT_ACCEPT', agent.name, {
         ticketId,
         stage: currentStage,
         parity: participantParity
@@ -765,8 +790,8 @@ io.on('connection', (socket) => {
       setTimeout(async () => {
         if (ticket.status === 'in Progress' && ticket.assignedTo === agent.name) {
           ticket.status = 'solved';
-          ticket.solution = ticket.isCritical 
-            ? `🚨 CRITICAL TICKET RESOLVED by ${agent.name}: Emergency server restart performed` 
+          ticket.solution = ticket.isCritical
+            ? `🚨 CRITICAL TICKET RESOLVED by ${agent.name}: Emergency server restart performed`
             : `Solved by ${agent.name}`;
           ticket.solutionAuthor = agent.name;
           ticket.linkedKbId = 'bot_auto';
@@ -777,7 +802,7 @@ io.on('connection', (socket) => {
             message: `solved ${ticket.isCritical ? '🚨 CRITICAL ' : ''}ticket "${ticket.title}"`,
             type: 'success'
           });
-          await writeLog('BOT_SOLVE', agent.name, { 
+          await writeLog('BOT_SOLVE', agent.name, {
             ticketId,
             stage: currentStage,
             parity: participantParity
@@ -805,8 +830,8 @@ setInterval(async () => {
       ticket.assignOverdueReported = true;
       io.emit('client:notification', {
         type: 'warning',
-        message: ticket.isCritical 
-          ? '🚨 CRITICAL TICKET OVERDUE: Server still down! Immediate assignment required!' 
+        message: ticket.isCritical
+          ? '🚨 CRITICAL TICKET OVERDUE: Server still down! Immediate assignment required!'
           : 'You took too long to assign the request!'
       });
     }
@@ -822,15 +847,15 @@ setInterval(async () => {
 
       ticket.messages.push({
         from: 'client',
-        text: ticket.isCritical 
-          ? '🚨 CRITICAL: Time is up! System outage causing business losses!' 
+        text: ticket.isCritical
+          ? '🚨 CRITICAL: Time is up! System outage causing business losses!'
           : 'You took too long to respond. Client is dissatisfied.',
         timestamp: Date.now()
       });
       io.emit('client:notification', {
         type: 'warning',
-        message: ticket.isCritical 
-          ? '🚨 CRITICAL TICKET SOLUTION OVERDUE: Business operations affected!' 
+        message: ticket.isCritical
+          ? '🚨 CRITICAL TICKET SOLUTION OVERDUE: Business operations affected!'
           : 'Solution took too long. Client is dissatisfied!'
       });
     }
@@ -852,19 +877,19 @@ app.get('/api/survey/pre-experiment', (req, res) => {
 app.get('/api/survey/post-experiment', (req, res) => {
   try {
     const { parity } = req.query;
-    
+
     if (!parity || !['even', 'odd'].includes(parity)) {
       return res.status(400).json({ error: 'Missing or invalid parity parameter. Must be "even" or "odd"' });
     }
-    
+
     let questions = [];
-    
+
     if (parity === 'even') {
       questions = postExperimentQuestions.even;
     } else if (parity === 'odd') {
       questions = postExperimentQuestions.odd;
     }
-    
+
     console.log(`📊 Sending post-experiment survey for ${parity} parity with ${questions.length} questions`);
     res.json({ questions });
   } catch (error) {
@@ -877,7 +902,7 @@ app.get('/api/survey/post-experiment', (req, res) => {
 app.post('/api/survey/pre-experiment/submit', async (req, res) => {
   try {
     const { participantId, participantParity, responses } = req.body;
-    
+
     if (!participantId || !responses) {
       return res.status(400).json({ error: 'Missing participantId or responses' });
     }
@@ -894,12 +919,12 @@ app.post('/api/survey/pre-experiment/submit', async (req, res) => {
       );
     }
 
-    await writeLog('PRE_EXPERIMENT_SURVEY_COMPLETED', `participant_${participantId}`, { 
-      participantId, 
+    await writeLog('PRE_EXPERIMENT_SURVEY_COMPLETED', `participant_${participantId}`, {
+      participantId,
       participantParity,
-      questionCount: responses.length 
+      questionCount: responses.length
     });
-    
+
     res.json({ success: true, message: 'Pre-experiment survey responses saved' });
   } catch (error) {
     console.error('Error saving pre-experiment survey responses:', error);
@@ -911,7 +936,7 @@ app.post('/api/survey/pre-experiment/submit', async (req, res) => {
 app.post('/api/survey/post-experiment/submit', async (req, res) => {
   try {
     const { participantId, participantParity, responses } = req.body;
-    
+
     if (!participantId || !responses || !participantParity) {
       return res.status(400).json({ error: 'Missing participantId, responses or parity' });
     }
@@ -927,12 +952,12 @@ app.post('/api/survey/post-experiment/submit', async (req, res) => {
       );
     }
 
-    await writeLog('POST_EXPERIMENT_SURVEY_COMPLETED', `participant_${participantId}`, { 
-      participantId, 
+    await writeLog('POST_EXPERIMENT_SURVEY_COMPLETED', `participant_${participantId}`, {
+      participantId,
       participantParity,
-      questionCount: responses.length 
+      questionCount: responses.length
     });
-    
+
     res.json({ success: true, message: 'Post-experiment survey responses saved' });
   } catch (error) {
     console.error('Error saving post-experiment survey responses:', error);
@@ -943,57 +968,57 @@ app.post('/api/survey/post-experiment/submit', async (req, res) => {
 // New endpoint for changing AI mode during experiment
 app.post('/admin/change-ai-mode', async (req, res) => {
   const { aiMode, participantParity: parity } = req.body;
-  
+
   if (!aiMode || !parity) {
     return res.status(400).json({ error: 'Missing aiMode or participantParity' });
   }
-  
+
   // Only allow change for even participants during stage 2
   if (parity !== 'even' || currentStage !== 2) {
     return res.status(403).json({ error: 'AI mode can only be changed by even participants during experiment stage' });
   }
-  
+
   currentAiMode = aiMode;
-  
+
   // Broadcast the change to all connected clients
   io.emit('ai:mode_changed', { aiMode: currentAiMode });
-  
-  await writeLog('AI_MODE_CHANGED', 'ADMIN', { 
+
+  await writeLog('AI_MODE_CHANGED', 'ADMIN', {
     aiMode: currentAiMode,
     stage: currentStage,
     parity: parity
   });
-  
+
   res.json({ success: true, aiMode: currentAiMode });
 });
 
 app.post('/admin/start', async (req, res) => {
   const { stage, aiMode, participantParity: parity } = req.body;
-  
+
   currentStage = stage;
   currentAiMode = aiMode || 'normal';
   participantParity = parity || null;
-  
+
   console.log(`🚀 Starting stage ${currentStage} for participant ${parity} (AI mode: ${currentAiMode})`);
-  
+
   // Clear existing tickets
   tickets = [];
-  
+
   // Clear any existing spawn interval
   stopTicketSpawning();
-  
+
   // At stage 1 (tutorial) all bots offline
   if (currentStage === 1) {
     agents.forEach(a => a.status = 'offline');
     console.log('🎮 Starting tutorial - spawning 3 tutorial tickets');
-    
+
     // Spawn 3 tutorial tickets immediately
     for (let i = 0; i < 3; i++) {
       setTimeout(async () => {
         await spawnTicket(false, true);
       }, i * 1500); // Stagger spawns by 1.5 seconds
     }
-  } 
+  }
   // At stage 2: if odd participant - bots online (available for delegation)
   // if even - bots offline (work with AI)
   else if (currentStage === 2) {
@@ -1006,38 +1031,38 @@ app.post('/admin/start', async (req, res) => {
       agents.forEach(a => a.status = 'offline');
       console.log('🤖 Setting bots to offline for even participant');
     }
-    
+
     // Set stage start time and duration for critical ticket timing
     stageStartTime = Date.now();
     stageDuration = SHIFT_DURATION_MS;
-    
+
     // Start automatic ticket spawning for stage 2
     startTicketSpawning();
-    
-    await writeLog('STAGE_2_STARTED', 'System', { 
-      startTime: stageStartTime, 
+
+    await writeLog('STAGE_2_STARTED', 'System', {
+      startTime: stageStartTime,
       duration: stageDuration,
       participantParity
     });
   }
-  
-  io.emit('init', { 
-    tickets, 
-    kbArticles, 
-    agents, 
-    currentStage, 
+
+  io.emit('init', {
+    tickets,
+    kbArticles,
+    agents,
+    currentStage,
     aiMode: currentAiMode,
     participantParity
   });
-  
-  await writeLog('STAGE_START', 'ADMIN', { 
-    stage: currentStage, 
+
+  await writeLog('STAGE_START', 'ADMIN', {
+    stage: currentStage,
     aiMode: currentAiMode,
     participantParity
   });
-  
-  res.json({ 
-    success: true, 
+
+  res.json({
+    success: true,
     stage: currentStage,
     aiMode: currentAiMode,
     participantParity
@@ -1047,8 +1072,8 @@ app.post('/admin/start', async (req, res) => {
 // Endpoint to spawn tutorial ticket
 app.post('/admin/tutorial/ticket', async (req, res) => {
   const tutorialTicket = await spawnTicket(false, true);
-  res.json({ 
-    success: true, 
+  res.json({
+    success: true,
     message: 'Tutorial ticket created',
     ticket: tutorialTicket
   });
@@ -1056,8 +1081,8 @@ app.post('/admin/tutorial/ticket', async (req, res) => {
 
 app.post('/admin/critical', async (req, res) => {
   const criticalTicket = await spawnTicket(true);
-  res.json({ 
-    success: true, 
+  res.json({
+    success: true,
     message: 'Critical ticket created',
     ticket: criticalTicket
   });
@@ -1079,8 +1104,8 @@ app.get('/debug', (req, res) => {
 
 // Health check endpoint for Render
 app.get('/health', (req, res) => {
-  res.status(200).json({ 
-    status: 'OK', 
+  res.status(200).json({
+    status: 'OK',
     timestamp: new Date().toISOString(),
     stage: currentStage,
     connectedClients: io.engine.clientsCount,
@@ -1091,7 +1116,7 @@ app.get('/health', (req, res) => {
 // Route for instructions.html - serve the actual file
 app.get('/instructions.html', (req, res) => {
   const instructionsPath = path.join(__dirname, 'public', 'instructions.html');
-  
+
   if (fs.existsSync(instructionsPath)) {
     res.sendFile(instructionsPath);
   } else {
@@ -1155,7 +1180,7 @@ app.get('/instructions.html', (req, res) => {
     </div>
 </body>
 </html>`;
-    
+
     fs.writeFileSync(instructionsPath, basicInstructions);
     res.sendFile(instructionsPath);
   }

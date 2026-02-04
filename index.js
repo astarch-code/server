@@ -1510,9 +1510,10 @@ app.get('/instructions.html', (req, res) => {
 
 // Route for all other requests - serve index.html for SPA
 app.get('*', (req, res) => {
-  if (req.path.startsWith('/api/')) {
+/*   if (req.path.startsWith('/api/')) {
     res.status(404).json({ error: 'API endpoint not found' });
-  } else if (req.path === '/instructions.html') {
+  } else  */
+    if (req.path === '/instructions.html') {
     res.sendFile(path.join(__dirname, 'public', 'instructions.html'));
   } else {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));

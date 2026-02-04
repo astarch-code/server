@@ -195,21 +195,70 @@ const AUTONOMOUS_AI_CONFIG = {
 
 const SHIFT_DURATION_MS = 600 * 1000; // 10 minutes in milliseconds
 
-const agents = [
+const baseAgents = [
   { id: 'bot1', name: 'Lukas Schneider (experienced and friendly worker)', skill: 0.9, trust: 0.9, greeting: "Hello! I'm on shift. Write if you need help.", status: 'online' },
   { id: 'bot2', name: 'Anna Müller (rookie)', skill: 0.5, trust: 0.5, greeting: "Hey. Lots of work...", status: 'online' },
   { id: 'bot3', name: 'Jonas Weber (very friendly)', skill: 0.4, trust: 0.7, greeting: "Good day, colleagues.", status: 'online' }
 ];
 
-let tickets = [];
-let currentStage = 1; // 1 = tutorial, 2 = experiment
-let currentAiMode = 'normal';
-let participantParity = null; // 'even' or 'odd'
-let stageStartTime = null; // Time when stage 2 started
-let stageDuration = null; // Duration of stage 2 in ms
-let spawnInterval = null; // Interval for spawning tickets
+// --- SESSIONS STORAGE ---
+const sessions = new Map(); // Key: participantId, Value: session object
 
-// --- LOGGING FUNCTIONS (REMOVED DATABASE LOGGING) ---
+// --- SESSION MANAGEMENT FUNCTIONS ---
+const getOrCreateSession = (participantId, participantParity) => {
+  if (!sessions.has(participantId)) {
+    console.log(`🆕 Creating new session for participant: ${participantId} (${participantParity})`);
+    
+    const newSession = {
+      participantId,
+      participantParity,
+      tickets: [],
+      agents: JSON.parse(JSON.stringify(baseAgents)), // Deep copy of base agents
+      currentStage: 1,
+      currentAiMode: 'normal',
+      stageStartTime: null,
+      stageDuration: null,
+      spawnInterval: null,
+      botCheckInterval: null,
+      socketConnections: new Set() // Store socket IDs connected to this session
+    };
+    
+    sessions.set(participantId, newSession);
+    return newSession;
+  }
+  
+  return sessions.get(participantId);
+};
+
+const getSessionBySocket = (socketId) => {
+  for (const [participantId, session] of sessions) {
+    if (session.socketConnections.has(socketId)) {
+      return session;
+    }
+  }
+  return null;
+};
+
+const cleanupSession = (participantId) => {
+  const session = sessions.get(participantId);
+  if (session) {
+    // Clear intervals
+    if (session.spawnInterval) {
+      clearInterval(session.spawnInterval);
+      console.log(`🛑 Cleared spawn interval for ${participantId}`);
+    }
+    if (session.botCheckInterval) {
+      clearInterval(session.botCheckInterval);
+      console.log(`🛑 Cleared bot check interval for ${participantId}`);
+    }
+    
+    // Remove session
+    sessions.delete(participantId);
+    console.log(`🗑️ Cleaned up session for ${participantId}`);
+  }
+};
+
+// --- LOGGING FUNCTIONS ---
 const writeLog = async (action, user, details) => {
   // Only log to console, not to database
   console.log(`[LOG] ${action} (${user}): ${JSON.stringify(details)}`);
@@ -241,11 +290,9 @@ const savePostExperimentResponse = async (participantId, parity, questionId, que
   }
 };
 
-// REMOVED: saveTicketToDB function since tickets are not stored in database
+// --- SESSION-SPECIFIC LOGIC ---
 
-// --- LOGIC ---
-
-const spawnTicket = async (isCritical = false, tutorialTicket = false) => {
+const spawnTicketForSession = async (session, isCritical = false, tutorialTicket = false) => {
   // Убедитесь, что ticketTemplates загружены
   if (!ticketTemplates || ticketTemplates.length === 0) {
     console.error('❌ No ticket templates loaded!');
@@ -255,7 +302,7 @@ const spawnTicket = async (isCritical = false, tutorialTicket = false) => {
   const tmpl = ticketTemplates[Math.floor(Math.random() * ticketTemplates.length)];
 
   // Логи для отладки
-  console.log(`🎫 Spawning ${isCritical ? 'CRITICAL ' : ''}ticket from template: "${tmpl.title}"`);
+  console.log(`🎫 Spawning ${isCritical ? 'CRITICAL ' : ''}ticket for ${session.participantId} from template: "${tmpl.title}"`);
 
   const newTicket = {
     id: uuidv4(),
@@ -278,43 +325,61 @@ const spawnTicket = async (isCritical = false, tutorialTicket = false) => {
     isTutorial: tutorialTicket
   };
 
-  tickets.push(newTicket);
-  console.log(`📊 Ticket added to array. Total tickets: ${tickets.length}`);
-  io.emit('ticket:new', newTicket);
+  session.tickets.push(newTicket);
+  console.log(`📊 Ticket added to session ${session.participantId}. Total tickets: ${session.tickets.length}`);
+  
+  // Emit to all sockets connected to this session
+  session.socketConnections.forEach(socketId => {
+    const socket = io.sockets.sockets.get(socketId);
+    if (socket) {
+      socket.emit('ticket:new', newTicket);
+    }
+  });
 
   // Для критических тикетов сразу отправляем специальное уведомление
   if (isCritical && !tutorialTicket) {
     console.log(`🚨 Sending critical notification for ticket: ${newTicket.id}`);
-    io.emit('client:notification', {
-      type: 'critical',
-      message: '🚨 CRITICAL TICKET: Server Down! Immediate action required! Business impact!'
+    session.socketConnections.forEach(socketId => {
+      const socket = io.sockets.sockets.get(socketId);
+      if (socket) {
+        socket.emit('client:notification', {
+          type: 'critical',
+          message: '🚨 CRITICAL TICKET: Server Down! Immediate action required! Business impact!'
+        });
+      }
     });
   }
 
   await writeLog('TICKET_SPAWN', 'System', {
     ticketId: newTicket.id,
-    aiMode: currentAiMode,
-    stage: currentStage,
-    parity: participantParity,
+    participantId: session.participantId,
+    aiMode: session.currentAiMode,
+    stage: session.currentStage,
+    parity: session.participantParity,
     severity: newTicket.severity,
     isCritical: isCritical,
     tutorialTicket: tutorialTicket
   });
 
   // Autonomous AI works only at stage 2 for even participants
-  if (currentStage === 2 && participantParity === 'even' && currentAiMode === 'autonomous' && !tutorialTicket) {
+  if (session.currentStage === 2 && session.participantParity === 'even' && session.currentAiMode === 'autonomous' && !tutorialTicket) {
     setTimeout(() => {
-      handleAutonomousAI(newTicket);
+      handleAutonomousAIForSession(session, newTicket);
     }, 1000);
   }
 
   // Ticket notifications only at stage 2 for even participants in normal mode
-  if (currentStage === 2 && participantParity === 'even' && currentAiMode === 'normal' && !tutorialTicket) {
+  if (session.currentStage === 2 && session.participantParity === 'even' && session.currentAiMode === 'normal' && !tutorialTicket) {
     setTimeout(() => {
-      io.emit('ai:notification', {
-        type: 'new_ticket',
-        message: `🚨 New ${isCritical ? 'CRITICAL ' : ''}ticket: ${newTicket.title}`,
-        isCritical: isCritical
+      session.socketConnections.forEach(socketId => {
+        const socket = io.sockets.sockets.get(socketId);
+        if (socket) {
+          socket.emit('ai:notification', {
+            type: 'new_ticket',
+            message: `🚨 New ${isCritical ? 'CRITICAL ' : ''}ticket: ${newTicket.title}`,
+            isCritical: isCritical
+          });
+        }
       });
     }, 2000);
   }
@@ -322,22 +387,30 @@ const spawnTicket = async (isCritical = false, tutorialTicket = false) => {
   return newTicket;
 };
 
-const handleAutonomousAI = async (ticket) => {
+const handleAutonomousAIForSession = async (session, ticket) => {
   if (ticket.status !== 'not assigned') return;
 
   if (Math.random() * 100 < AUTONOMOUS_AI_CONFIG.missProbability) {
     await writeLog('AI_MISSED_TICKET', 'AI', {
       ticketId: ticket.id,
+      participantId: session.participantId,
       probability: AUTONOMOUS_AI_CONFIG.missProbability,
-      stage: currentStage,
-      parity: participantParity,
+      stage: session.currentStage,
+      parity: session.participantParity,
       isCritical: ticket.isCritical
     });
-    io.emit('ai:autonomous_action', {
-      type: 'missed',
-      ticketId: ticket.id,
-      message: `AI missed ${ticket.isCritical ? 'CRITICAL ' : ''}ticket`
+    
+    session.socketConnections.forEach(socketId => {
+      const socket = io.sockets.sockets.get(socketId);
+      if (socket) {
+        socket.emit('ai:autonomous_action', {
+          type: 'missed',
+          ticketId: ticket.id,
+          message: `AI missed ${ticket.isCritical ? 'CRITICAL ' : ''}ticket`
+        });
+      }
     });
+    
     return;
   }
 
@@ -353,17 +426,23 @@ const handleAutonomousAI = async (ticket) => {
 
   await writeLog('AI_TOOK_TICKET', 'AI', {
     ticketId: ticket.id,
-    stage: currentStage,
-    parity: participantParity,
+    participantId: session.participantId,
+    stage: session.currentStage,
+    parity: session.participantParity,
     isCritical: ticket.isCritical
   });
 
-  io.emit('ai:autonomous_action', {
-    type: 'taken',
-    ticketId: ticket.id,
-    message: `AI took ${ticket.isCritical ? '🚨 CRITICAL ' : ''}ticket #${ticket.id.slice(0, 5)} to work`
+  session.socketConnections.forEach(socketId => {
+    const socket = io.sockets.sockets.get(socketId);
+    if (socket) {
+      socket.emit('ai:autonomous_action', {
+        type: 'taken',
+        ticketId: ticket.id,
+        message: `AI took ${ticket.isCritical ? '🚨 CRITICAL ' : ''}ticket #${ticket.id.slice(0, 5)} to work`
+      });
+      socket.emit('tickets:update', session.tickets);
+    }
   });
-  io.emit('tickets:update', tickets);
 
   const solveTime = ticket.isCritical ? 2000 + Math.random() * 3000 : 3000 + Math.random() * 5000;
   setTimeout(async () => {
@@ -382,16 +461,22 @@ const handleAutonomousAI = async (ticket) => {
 
         await writeLog('AI_FAILED_TICKET', 'AI', {
           ticketId: ticket.id,
+          participantId: session.participantId,
           probability: AUTONOMOUS_AI_CONFIG.failProbability,
-          stage: currentStage,
-          parity: participantParity,
+          stage: session.currentStage,
+          parity: session.participantParity,
           isCritical: ticket.isCritical
         });
 
-        io.emit('ai:autonomous_action', {
-          type: 'failed',
-          ticketId: ticket.id,
-          message: `AI failed to solve ${ticket.isCritical ? '🚨 CRITICAL ' : ''}ticket #${ticket.id.slice(0, 5)}`
+        session.socketConnections.forEach(socketId => {
+          const socket = io.sockets.sockets.get(socketId);
+          if (socket) {
+            socket.emit('ai:autonomous_action', {
+              type: 'failed',
+              ticketId: ticket.id,
+              message: `AI failed to solve ${ticket.isCritical ? '🚨 CRITICAL ' : ''}ticket #${ticket.id.slice(0, 5)}`
+            });
+          }
         });
       } else {
         ticket.status = 'solved';
@@ -426,52 +511,68 @@ const handleAutonomousAI = async (ticket) => {
               : 'Thank you, problem solved!',
             timestamp: Date.now() + 100
           });
-          io.emit('tickets:update', tickets);
+          
+          session.socketConnections.forEach(socketId => {
+            const socket = io.sockets.sockets.get(socketId);
+            if (socket) {
+              socket.emit('tickets:update', session.tickets);
+            }
+          });
         }, 1000);
 
         await writeLog('AI_SOLVED_TICKET', 'AI', {
           ticketId: ticket.id,
+          participantId: session.participantId,
           kbId: ticket.linkedKbId,
-          stage: currentStage,
-          parity: participantParity,
+          stage: session.currentStage,
+          parity: session.participantParity,
           isCritical: ticket.isCritical
         });
 
-        io.emit('ai:autonomous_action', {
-          type: 'solved',
-          ticketId: ticket.id,
-          message: `AI successfully solved ${ticket.isCritical ? '🚨 CRITICAL ' : ''}ticket #${ticket.id.slice(0, 5)}`
+        session.socketConnections.forEach(socketId => {
+          const socket = io.sockets.sockets.get(socketId);
+          if (socket) {
+            socket.emit('ai:autonomous_action', {
+              type: 'solved',
+              ticketId: ticket.id,
+              message: `AI successfully solved ${ticket.isCritical ? '🚨 CRITICAL ' : ''}ticket #${ticket.id.slice(0, 5)}`
+            });
+          }
         });
       }
 
-      io.emit('tickets:update', tickets);
+      session.socketConnections.forEach(socketId => {
+        const socket = io.sockets.sockets.get(socketId);
+        if (socket) {
+          socket.emit('tickets:update', session.tickets);
+        }
+      });
     }
   }, solveTime);
 };
 
-// Start/stop ticket spawning based on stage
-// Замените существующий интервал на этот:
-const startTicketSpawning = () => {
+// Start/stop ticket spawning based on stage for a specific session
+const startTicketSpawningForSession = (session) => {
   // Clear existing interval if any
-  if (spawnInterval) {
-    clearInterval(spawnInterval);
-    spawnInterval = null;
+  if (session.spawnInterval) {
+    clearInterval(session.spawnInterval);
+    session.spawnInterval = null;
   }
 
-  if (currentStage === 2) {
-    console.log('🚀 Starting ticket spawning for stage 2');
+  if (session.currentStage === 2) {
+    console.log(`🚀 Starting ticket spawning for session ${session.participantId} stage 2`);
 
     // Запускаем спаун тикетов с фиксированной логикой
-    spawnInterval = setInterval(async () => {
-      console.log(`🎲 Checking to spawn ticket (stage: ${currentStage}, parity: ${participantParity})`);
+    session.spawnInterval = setInterval(async () => {
+      console.log(`🎲 Checking to spawn ticket for ${session.participantId} (stage: ${session.currentStage}, parity: ${session.participantParity})`);
 
       // Проверяем условие для спауна тикета (30% вероятность)
       if (Math.random() > 0.7) {
         // Проверяем, прошла ли половина времени смены
-        const timeElapsed = Date.now() - stageStartTime;
-        const isSecondHalf = stageStartTime && stageDuration && timeElapsed > (stageDuration / 2);
+        const timeElapsed = Date.now() - session.stageStartTime;
+        const isSecondHalf = session.stageStartTime && session.stageDuration && timeElapsed > (session.stageDuration / 2);
 
-        console.log(`⏱️ Time elapsed: ${timeElapsed}ms, isSecondHalf: ${isSecondHalf}`);
+        console.log(`⏱️ Time elapsed for ${session.participantId}: ${timeElapsed}ms, isSecondHalf: ${isSecondHalf}`);
 
         // Критические тикеты спаунятся только во второй половине времени смены
         let isCritical = false;
@@ -480,60 +581,85 @@ const startTicketSpawning = () => {
         if (isSecondHalf) {
           // Во второй половине - 40% вероятность критического тикета
           isCritical = Math.random() < 0.4;
-          console.log(`🎯 Critical chance check: ${isCritical ? 'CRITICAL' : 'normal'} (random: ${Math.random()})`);
+          console.log(`🎯 Critical chance check for ${session.participantId}: ${isCritical ? 'CRITICAL' : 'normal'} (random: ${Math.random()})`);
         }
 
-        console.log(`🎯 Spawning ${isCritical ? 'CRITICAL ' : ''}ticket in stage 2`);
-        await spawnTicket(isCritical);
+        console.log(`🎯 Spawning ${isCritical ? 'CRITICAL ' : ''}ticket in stage 2 for ${session.participantId}`);
+        await spawnTicketForSession(session, isCritical);
       }
     }, 8000); // Каждые 8 секунд
 
-    console.log(`✅ Ticket spawning interval started (every 8s)`);
+    console.log(`✅ Ticket spawning interval started for ${session.participantId} (every 8s)`);
   }
 };
 
-const stopTicketSpawning = () => {
-  if (spawnInterval) {
-    clearInterval(spawnInterval);
-    spawnInterval = null;
-    console.log('🛑 Stopped ticket spawning');
+const stopTicketSpawningForSession = (session) => {
+  if (session.spawnInterval) {
+    clearInterval(session.spawnInterval);
+    session.spawnInterval = null;
+    console.log(`🛑 Stopped ticket spawning for ${session.participantId}`);
   }
 };
 
-setInterval(async () => {
-  // Bots active only at stage 2 for odd participants
-  if (currentStage !== 2 || participantParity !== 'odd') return;
-
-  let changed = false;
-
-  agents.forEach(agent => {
-    if (agent.status === 'online') {
-      if (Math.random() < BOT_LIFECYCLE_CONFIG.leaveProbability) {
-        agent.status = 'away';
-        writeLog('BOT_STATUS_CHANGE', agent.name, {
-          status: 'away',
-          stage: currentStage,
-          parity: participantParity
-        });
-        changed = true;
-      }
-    } else if (agent.status === 'away') {
-      if (Math.random() < BOT_LIFECYCLE_CONFIG.returnProbability) {
-        agent.status = 'online';
-        writeLog('BOT_STATUS_CHANGE', agent.name, {
-          status: 'online',
-          stage: currentStage,
-          parity: participantParity
-        });
-        changed = true;
-      }
-    }
-  });
-
-  if (changed) {
-    io.emit('agents:update', agents);
+// Start bot lifecycle for a specific session
+const startBotLifecycleForSession = (session) => {
+  // Clear existing interval if any
+  if (session.botCheckInterval) {
+    clearInterval(session.botCheckInterval);
+    session.botCheckInterval = null;
   }
-}, BOT_LIFECYCLE_CONFIG.checkInterval);
+
+  if (session.currentStage === 2 && session.participantParity === 'odd') {
+    console.log(`🤖 Starting bot lifecycle for session ${session.participantId}`);
+    
+    session.botCheckInterval = setInterval(() => {
+      let changed = false;
+
+      session.agents.forEach(agent => {
+        if (agent.status === 'online') {
+          if (Math.random() < BOT_LIFECYCLE_CONFIG.leaveProbability) {
+            agent.status = 'away';
+            writeLog('BOT_STATUS_CHANGE', agent.name, {
+              participantId: session.participantId,
+              status: 'away',
+              stage: session.currentStage,
+              parity: session.participantParity
+            });
+            changed = true;
+          }
+        } else if (agent.status === 'away') {
+          if (Math.random() < BOT_LIFECYCLE_CONFIG.returnProbability) {
+            agent.status = 'online';
+            writeLog('BOT_STATUS_CHANGE', agent.name, {
+              participantId: session.participantId,
+              status: 'online',
+              stage: session.currentStage,
+              parity: session.participantParity
+            });
+            changed = true;
+          }
+        }
+      });
+
+      if (changed) {
+        session.socketConnections.forEach(socketId => {
+          const socket = io.sockets.sockets.get(socketId);
+          if (socket) {
+            socket.emit('agents:update', session.agents);
+          }
+        });
+      }
+    }, BOT_LIFECYCLE_CONFIG.checkInterval);
+  }
+};
+
+const stopBotLifecycleForSession = (session) => {
+  if (session.botCheckInterval) {
+    clearInterval(session.botCheckInterval);
+    session.botCheckInterval = null;
+    console.log(`🛑 Stopped bot lifecycle for ${session.participantId}`);
+  }
+};
 
 const normalizeWords = (text) =>
   text
@@ -566,22 +692,41 @@ io.on('connection', (socket) => {
   console.log('✅ New client connected:', socket.id);
 
   socket.on('request:init', (data) => {
-    console.log('📥 Received init request from participant:', data?.participantParity);
-    if (data && data.participantParity) {
-      participantParity = data.participantParity;
+    console.log('📥 Received init request:', data);
+    
+    const { participantId, participantParity } = data;
+    
+    if (!participantId) {
+      console.error('❌ No participantId provided in init request');
+      return;
     }
+
+    const session = getOrCreateSession(participantId, participantParity);
+    
+    // Add socket to session connections
+    session.socketConnections.add(socket.id);
+    
+    console.log(`🔗 Socket ${socket.id} connected to session ${participantId}. Total connections: ${session.socketConnections.size}`);
+    
+    // Send session data to the socket
     socket.emit('init', {
-      tickets,
-      kbArticles,
-      agents,
-      currentStage,
-      aiMode: currentAiMode,
-      participantParity
+      tickets: session.tickets,
+      kbArticles: kbArticles,
+      agents: session.agents,
+      currentStage: session.currentStage,
+      aiMode: session.currentAiMode,
+      participantParity: session.participantParity
     });
   });
 
   socket.on('ticket:status:update', async ({ ticketId, newStatus }) => {
-    const ticket = tickets.find(t => t.id === ticketId);
+    const session = getSessionBySocket(socket.id);
+    if (!session) {
+      console.error('❌ No session found for socket:', socket.id);
+      return;
+    }
+
+    const ticket = session.tickets.find(t => t.id === ticketId);
     if (!ticket) return;
 
     ticket.status = newStatus;
@@ -594,9 +739,10 @@ io.on('connection', (socket) => {
       }
       await writeLog('TICKET_TAKEN', 'participant', {
         ticketId,
-        aiMode: currentAiMode,
-        stage: currentStage,
-        parity: participantParity,
+        participantId: session.participantId,
+        aiMode: session.currentAiMode,
+        stage: session.currentStage,
+        parity: session.participantParity,
         isCritical: ticket.isCritical,
         tutorialTicket: ticket.isTutorial
       });
@@ -604,11 +750,24 @@ io.on('connection', (socket) => {
       ticket.assignedTo = null;
       ticket.deadlineSolve = null;
     }
-    io.emit('tickets:update', tickets);
+    
+    // Emit update to all sockets in this session
+    session.socketConnections.forEach(socketId => {
+      const sock = io.sockets.sockets.get(socketId);
+      if (sock) {
+        sock.emit('tickets:update', session.tickets);
+      }
+    });
   });
 
   socket.on('ticket:solve', async (data) => {
-    const t = tickets.find(x => x.id === data.ticketId);
+    const session = getSessionBySocket(socket.id);
+    if (!session) {
+      console.error('❌ No session found for socket:', socket.id);
+      return;
+    }
+
+    const t = session.tickets.find(x => x.id === data.ticketId);
     if (!t) return;
 
     t.status = 'solved';
@@ -618,10 +777,11 @@ io.on('connection', (socket) => {
 
     await writeLog('TICKET_SOLVE', 'participant', {
       ticketId: t.id,
+      participantId: session.participantId,
       kb: data.linkedKbId,
-      aiMode: currentAiMode,
-      stage: currentStage,
-      parity: participantParity,
+      aiMode: session.currentAiMode,
+      stage: session.currentStage,
+      parity: session.participantParity,
       isCritical: t.isCritical,
       tutorialTicket: t.isTutorial
     });
@@ -635,7 +795,12 @@ io.on('connection', (socket) => {
       timestamp: Date.now()
     });
 
-    io.emit('tickets:update', tickets);
+    session.socketConnections.forEach(socketId => {
+      const sock = io.sockets.sockets.get(socketId);
+      if (sock) {
+        sock.emit('tickets:update', session.tickets);
+      }
+    });
 
     // For tutorial tickets, always show success
     if (t.isTutorial) {
@@ -644,7 +809,14 @@ io.on('connection', (socket) => {
         text: 'Thank you! The problem is solved!',
         timestamp: Date.now() + 100
       });
-      io.emit('tickets:update', tickets);
+      
+      session.socketConnections.forEach(socketId => {
+        const sock = io.sockets.sockets.get(socketId);
+        if (sock) {
+          sock.emit('tickets:update', session.tickets);
+        }
+      });
+      
       return;
     }
 
@@ -672,9 +844,14 @@ io.on('connection', (socket) => {
       });
 
       if (isSuccess) {
-        io.emit('client:notification', {
-          type: 'success',
-          message: `Client confirmed solution for ${t.isCritical ? '🚨 CRITICAL ' : ''}ticket #${t.id.slice(0, 5)}`
+        session.socketConnections.forEach(socketId => {
+          const sock = io.sockets.sockets.get(socketId);
+          if (sock) {
+            sock.emit('client:notification', {
+              type: 'success',
+              message: `Client confirmed solution for ${t.isCritical ? '🚨 CRITICAL ' : ''}ticket #${t.id.slice(0, 5)}`
+            });
+          }
         });
       } else {
         t.status = 'in Progress';
@@ -688,22 +865,38 @@ io.on('connection', (socket) => {
           timestamp: Date.now() + 10
         });
 
-        io.emit('client:notification', {
-          type: 'error',
-          message: `Error! ${t.isCritical ? '🚨 CRITICAL ' : ''}Ticket #${t.id.slice(0, 5)} returned to work.`
+        session.socketConnections.forEach(socketId => {
+          const sock = io.sockets.sockets.get(socketId);
+          if (sock) {
+            sock.emit('client:notification', {
+              type: 'error',
+              message: `Error! ${t.isCritical ? '🚨 CRITICAL ' : ''}Ticket #${t.id.slice(0, 5)} returned to work.`
+            });
+          }
         });
       }
 
-      io.emit('tickets:update', tickets);
+      session.socketConnections.forEach(socketId => {
+        const sock = io.sockets.sockets.get(socketId);
+        if (sock) {
+          sock.emit('tickets:update', session.tickets);
+        }
+      });
 
     }, 1500);
   });
 
   socket.on('ai:ask', ({ ticketId }) => {
-    // AI available only at stage 2 for even participants
-    if (currentStage !== 2 || participantParity !== 'even') return;
+    const session = getSessionBySocket(socket.id);
+    if (!session) {
+      console.error('❌ No session found for socket:', socket.id);
+      return;
+    }
 
-    const ticket = tickets.find(t => t.id === ticketId);
+    // AI available only at stage 2 for even participants
+    if (session.currentStage !== 2 || session.participantParity !== 'even') return;
+
+    const ticket = session.tickets.find(t => t.id === ticketId);
     if (!ticket) return;
 
     const keywords = ticket.title.toLowerCase().split(' ');
@@ -723,20 +916,27 @@ io.on('connection', (socket) => {
     socket.emit('ai:response', { ticketId, text: responseText, kbId: foundKbId });
     writeLog('AI_ASK', 'participant', {
       ticketId,
+      participantId: session.participantId,
       found: !!foundKb,
-      aiMode: currentAiMode,
-      stage: currentStage,
-      parity: participantParity,
+      aiMode: session.currentAiMode,
+      stage: session.currentStage,
+      parity: session.participantParity,
       isCritical: ticket.isCritical
     });
   });
 
   socket.on('bot:delegate', async ({ ticketId, botId }) => {
-    // Delegation available only at stage 2 for odd participants
-    if (currentStage !== 2 || participantParity !== 'odd') return;
+    const session = getSessionBySocket(socket.id);
+    if (!session) {
+      console.error('❌ No session found for socket:', socket.id);
+      return;
+    }
 
-    const ticket = tickets.find(t => t.id === ticketId);
-    const agent = agents.find(a => a.id === botId);
+    // Delegation available only at stage 2 for odd participants
+    if (session.currentStage !== 2 || session.participantParity !== 'odd') return;
+
+    const ticket = session.tickets.find(t => t.id === ticketId);
+    const agent = session.agents.find(a => a.id === botId);
 
     if (!ticket || !agent) return;
 
@@ -747,10 +947,11 @@ io.on('connection', (socket) => {
 
     await writeLog('DELEGATE_REQUEST', 'participant', {
       ticketId,
+      participantId: session.participantId,
       bot: agent.name,
-      aiMode: currentAiMode,
-      stage: currentStage,
-      parity: participantParity,
+      aiMode: session.currentAiMode,
+      stage: session.currentStage,
+      parity: session.participantParity,
       isCritical: ticket.isCritical
     });
 
@@ -761,15 +962,17 @@ io.on('connection', (socket) => {
           socket.emit('bot:notification', { botName: agent.name, message: "read, but didn't respond.", type: 'warning' });
           writeLog('BOT_IGNORE', agent.name, {
             ticketId,
-            stage: currentStage,
-            parity: participantParity
+            participantId: session.participantId,
+            stage: session.currentStage,
+            parity: session.participantParity
           });
         } else {
           socket.emit('bot:notification', { botName: agent.name, message: "refused: «I'm busy»", type: 'error' });
           writeLog('BOT_REFUSAL', agent.name, {
             ticketId,
-            stage: currentStage,
-            parity: participantParity
+            participantId: session.participantId,
+            stage: session.currentStage,
+            parity: session.participantParity
           });
         }
       }, 3000 + Math.random() * 2000);
@@ -780,11 +983,19 @@ io.on('connection', (socket) => {
       ticket.status = 'in Progress';
       ticket.assignedTo = agent.name;
       ticket.deadlineSolve = Date.now() + (ticket.isCritical ? 120000 : 300000);
-      io.emit('tickets:update', tickets);
+      
+      session.socketConnections.forEach(socketId => {
+        const sock = io.sockets.sockets.get(socketId);
+        if (sock) {
+          sock.emit('tickets:update', session.tickets);
+        }
+      });
+      
       await writeLog('BOT_ACCEPT', agent.name, {
         ticketId,
-        stage: currentStage,
-        parity: participantParity
+        participantId: session.participantId,
+        stage: session.currentStage,
+        parity: session.participantParity
       });
 
       setTimeout(async () => {
@@ -796,70 +1007,116 @@ io.on('connection', (socket) => {
           ticket.solutionAuthor = agent.name;
           ticket.linkedKbId = 'bot_auto';
 
-          io.emit('tickets:update', tickets);
-          io.emit('bot:notification', {
-            botName: agent.name,
-            message: `solved ${ticket.isCritical ? '🚨 CRITICAL ' : ''}ticket "${ticket.title}"`,
-            type: 'success'
+          session.socketConnections.forEach(socketId => {
+            const sock = io.sockets.sockets.get(socketId);
+            if (sock) {
+              sock.emit('tickets:update', session.tickets);
+              sock.emit('bot:notification', {
+                botName: agent.name,
+                message: `solved ${ticket.isCritical ? '🚨 CRITICAL ' : ''}ticket "${ticket.title}"`,
+                type: 'success'
+              });
+            }
           });
+          
           await writeLog('BOT_SOLVE', agent.name, {
             ticketId,
-            stage: currentStage,
-            parity: participantParity
+            participantId: session.participantId,
+            stage: session.currentStage,
+            parity: session.participantParity
           });
         }
       }, (ticket.isCritical ? 5000 : 10000) + Math.random() * 5000);
 
     }, 3000);
   });
+
+  socket.on('disconnect', () => {
+    // Find and remove socket from session
+    for (const [participantId, session] of sessions) {
+      if (session.socketConnections.has(socket.id)) {
+        session.socketConnections.delete(socket.id);
+        console.log(`🔌 Socket ${socket.id} disconnected from session ${participantId}. Remaining connections: ${session.socketConnections.size}`);
+        
+        // If no more connections, optionally cleanup session after some time
+        if (session.socketConnections.size === 0) {
+          console.log(`⏳ Session ${participantId} has no connections. Will be cleaned up in 5 minutes if no reconnection.`);
+          setTimeout(() => {
+            if (sessions.has(participantId) && sessions.get(participantId).socketConnections.size === 0) {
+              cleanupSession(participantId);
+            }
+          }, 5 * 60 * 1000); // Cleanup after 5 minutes of no connections
+        }
+        break;
+      }
+    }
+    
+    console.log(`❌ Client disconnected: ${socket.id}`);
+  });
 });
 
-setInterval(async () => {
+// Global interval for checking ticket deadlines (runs for all sessions)
+setInterval(() => {
   const now = Date.now();
+  
+  for (const [participantId, session] of sessions) {
+    session.tickets.forEach(ticket => {
+      // Skip tutorial tickets for overdue checks
+      if (ticket.isTutorial) return;
 
-  tickets.forEach(ticket => {
-    // Skip tutorial tickets for overdue checks
-    if (ticket.isTutorial) return;
+      if (
+        ticket.status === 'not assigned' &&
+        ticket.deadlineAssign &&
+        now > ticket.deadlineAssign &&
+        !ticket.assignOverdueReported
+      ) {
+        ticket.assignOverdueReported = true;
+        
+        session.socketConnections.forEach(socketId => {
+          const socket = io.sockets.sockets.get(socketId);
+          if (socket) {
+            socket.emit('client:notification', {
+              type: 'warning',
+              message: ticket.isCritical
+                ? '🚨 CRITICAL TICKET OVERDUE: Server still down! Immediate assignment required!'
+                : 'You took too long to assign the request!'
+            });
+          }
+        });
+      }
 
-    if (
-      ticket.status === 'not assigned' &&
-      ticket.deadlineAssign &&
-      now > ticket.deadlineAssign &&
-      !ticket.assignOverdueReported
-    ) {
-      ticket.assignOverdueReported = true;
-      io.emit('client:notification', {
-        type: 'warning',
-        message: ticket.isCritical
-          ? '🚨 CRITICAL TICKET OVERDUE: Server still down! Immediate assignment required!'
-          : 'You took too long to assign the request!'
-      });
-    }
+      if (
+        ticket.status === 'in Progress' &&
+        ticket.deadlineSolve &&
+        now > ticket.deadlineSolve &&
+        !ticket.solveOverdueReported
+      ) {
+        ticket.solveOverdueReported = true;
+        ticket.messages = ticket.messages || [];
 
-    if (
-      ticket.status === 'in Progress' &&
-      ticket.deadlineSolve &&
-      now > ticket.deadlineSolve &&
-      !ticket.solveOverdueReported
-    ) {
-      ticket.solveOverdueReported = true;
-      ticket.messages = ticket.messages || [];
-
-      ticket.messages.push({
-        from: 'client',
-        text: ticket.isCritical
-          ? '🚨 CRITICAL: Time is up! System outage causing business losses!'
-          : 'You took too long to respond. Client is dissatisfied.',
-        timestamp: Date.now()
-      });
-      io.emit('client:notification', {
-        type: 'warning',
-        message: ticket.isCritical
-          ? '🚨 CRITICAL TICKET SOLUTION OVERDUE: Business operations affected!'
-          : 'Solution took too long. Client is dissatisfied!'
-      });
-    }
-  });
+        ticket.messages.push({
+          from: 'client',
+          text: ticket.isCritical
+            ? '🚨 CRITICAL: Time is up! System outage causing business losses!'
+            : 'You took too long to respond. Client is dissatisfied.',
+          timestamp: Date.now()
+        });
+        
+        session.socketConnections.forEach(socketId => {
+          const socket = io.sockets.sockets.get(socketId);
+          if (socket) {
+            socket.emit('client:notification', {
+              type: 'warning',
+              message: ticket.isCritical
+                ? '🚨 CRITICAL TICKET SOLUTION OVERDUE: Business operations affected!'
+                : 'Solution took too long. Client is dissatisfied!'
+            });
+            socket.emit('tickets:update', session.tickets);
+          }
+        });
+      }
+    });
+  }
 }, 5000);
 
 // Endpoint for pre-experiment survey questions
@@ -967,111 +1224,153 @@ app.post('/api/survey/post-experiment/submit', async (req, res) => {
 
 // New endpoint for changing AI mode during experiment
 app.post('/admin/change-ai-mode', async (req, res) => {
-  const { aiMode, participantParity: parity } = req.body;
+  const { aiMode, participantParity: parity, participantId } = req.body;
 
-  if (!aiMode || !parity) {
-    return res.status(400).json({ error: 'Missing aiMode or participantParity' });
+  if (!aiMode || !parity || !participantId) {
+    return res.status(400).json({ error: 'Missing aiMode, participantParity or participantId' });
+  }
+
+  const session = sessions.get(participantId);
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found for participant' });
   }
 
   // Only allow change for even participants during stage 2
-  if (parity !== 'even' || currentStage !== 2) {
+  if (parity !== 'even' || session.currentStage !== 2) {
     return res.status(403).json({ error: 'AI mode can only be changed by even participants during experiment stage' });
   }
 
-  currentAiMode = aiMode;
+  session.currentAiMode = aiMode;
 
-  // Broadcast the change to all connected clients
-  io.emit('ai:mode_changed', { aiMode: currentAiMode });
+  // Broadcast the change to all connected clients in this session
+  session.socketConnections.forEach(socketId => {
+    const socket = io.sockets.sockets.get(socketId);
+    if (socket) {
+      socket.emit('ai:mode_changed', { aiMode: session.currentAiMode });
+    }
+  });
 
   await writeLog('AI_MODE_CHANGED', 'ADMIN', {
-    aiMode: currentAiMode,
-    stage: currentStage,
+    participantId,
+    aiMode: session.currentAiMode,
+    stage: session.currentStage,
     parity: parity
   });
 
-  res.json({ success: true, aiMode: currentAiMode });
+  res.json({ success: true, aiMode: session.currentAiMode });
 });
 
 app.post('/admin/start', async (req, res) => {
-  const { stage, aiMode, participantParity: parity } = req.body;
+  const { stage, aiMode, participantParity: parity, participantId } = req.body;
 
-  currentStage = stage;
-  currentAiMode = aiMode || 'normal';
-  participantParity = parity || null;
+  if (!participantId) {
+    return res.status(400).json({ error: 'Missing participantId' });
+  }
 
-  console.log(`🚀 Starting stage ${currentStage} for participant ${parity} (AI mode: ${currentAiMode})`);
+  const session = getOrCreateSession(participantId, parity);
+  
+  session.currentStage = stage;
+  session.currentAiMode = aiMode || 'normal';
+
+  console.log(`🚀 Starting stage ${session.currentStage} for participant ${participantId} (${parity}) (AI mode: ${session.currentAiMode})`);
 
   // Clear existing tickets
-  tickets = [];
+  session.tickets = [];
 
-  // Clear any existing spawn interval
-  stopTicketSpawning();
+  // Clear any existing intervals
+  stopTicketSpawningForSession(session);
+  stopBotLifecycleForSession(session);
+
+  // Reset agents to base state
+  session.agents = JSON.parse(JSON.stringify(baseAgents));
 
   // At stage 1 (tutorial) all bots offline
-  if (currentStage === 1) {
-    agents.forEach(a => a.status = 'offline');
-    console.log('🎮 Starting tutorial - spawning 3 tutorial tickets');
+  if (session.currentStage === 1) {
+    session.agents.forEach(a => a.status = 'offline');
+    console.log(`🎮 Starting tutorial for ${participantId} - spawning 3 tutorial tickets`);
 
     // Spawn 3 tutorial tickets immediately
     for (let i = 0; i < 3; i++) {
       setTimeout(async () => {
-        await spawnTicket(false, true);
+        await spawnTicketForSession(session, false, true);
       }, i * 1500); // Stagger spawns by 1.5 seconds
     }
   }
   // At stage 2: if odd participant - bots online (available for delegation)
   // if even - bots offline (work with AI)
-  else if (currentStage === 2) {
-    if (participantParity === 'odd') {
+  else if (session.currentStage === 2) {
+    if (session.participantParity === 'odd') {
       // For odd participants (work with colleagues) bots should be online
-      agents.forEach(a => a.status = 'online');
-      console.log('👥 Setting bots to online for odd participant');
+      session.agents.forEach(a => a.status = 'online');
+      console.log(`👥 Setting bots to online for odd participant ${participantId}`);
+      
+      // Start bot lifecycle for this session
+      startBotLifecycleForSession(session);
     } else {
       // For even participants (work with AI) bots should be offline
-      agents.forEach(a => a.status = 'offline');
-      console.log('🤖 Setting bots to offline for even participant');
+      session.agents.forEach(a => a.status = 'offline');
+      console.log(`🤖 Setting bots to offline for even participant ${participantId}`);
     }
 
     // Set stage start time and duration for critical ticket timing
-    stageStartTime = Date.now();
-    stageDuration = SHIFT_DURATION_MS;
+    session.stageStartTime = Date.now();
+    session.stageDuration = SHIFT_DURATION_MS;
 
     // Start automatic ticket spawning for stage 2
-    startTicketSpawning();
+    startTicketSpawningForSession(session);
 
     await writeLog('STAGE_2_STARTED', 'System', {
-      startTime: stageStartTime,
-      duration: stageDuration,
-      participantParity
+      participantId,
+      startTime: session.stageStartTime,
+      duration: session.stageDuration,
+      participantParity: session.participantParity
     });
   }
 
-  io.emit('init', {
-    tickets,
-    kbArticles,
-    agents,
-    currentStage,
-    aiMode: currentAiMode,
-    participantParity
+  // Send updated session data to all connected sockets
+  session.socketConnections.forEach(socketId => {
+    const socket = io.sockets.sockets.get(socketId);
+    if (socket) {
+      socket.emit('init', {
+        tickets: session.tickets,
+        kbArticles: kbArticles,
+        agents: session.agents,
+        currentStage: session.currentStage,
+        aiMode: session.currentAiMode,
+        participantParity: session.participantParity
+      });
+    }
   });
 
   await writeLog('STAGE_START', 'ADMIN', {
-    stage: currentStage,
-    aiMode: currentAiMode,
-    participantParity
+    participantId,
+    stage: session.currentStage,
+    aiMode: session.currentAiMode,
+    participantParity: session.participantParity
   });
 
   res.json({
     success: true,
-    stage: currentStage,
-    aiMode: currentAiMode,
-    participantParity
+    stage: session.currentStage,
+    aiMode: session.currentAiMode,
+    participantParity: session.participantParity
   });
 });
 
 // Endpoint to spawn tutorial ticket
 app.post('/admin/tutorial/ticket', async (req, res) => {
-  const tutorialTicket = await spawnTicket(false, true);
+  const { participantId } = req.body;
+  
+  if (!participantId) {
+    return res.status(400).json({ error: 'Missing participantId' });
+  }
+  
+  const session = sessions.get(participantId);
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+  
+  const tutorialTicket = await spawnTicketForSession(session, false, true);
   res.json({
     success: true,
     message: 'Tutorial ticket created',
@@ -1080,7 +1379,18 @@ app.post('/admin/tutorial/ticket', async (req, res) => {
 });
 
 app.post('/admin/critical', async (req, res) => {
-  const criticalTicket = await spawnTicket(true);
+  const { participantId } = req.body;
+  
+  if (!participantId) {
+    return res.status(400).json({ error: 'Missing participantId' });
+  }
+  
+  const session = sessions.get(participantId);
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+  
+  const criticalTicket = await spawnTicketForSession(session, true);
   res.json({
     success: true,
     message: 'Critical ticket created',
@@ -1090,15 +1400,27 @@ app.post('/admin/critical', async (req, res) => {
 
 // Debug endpoint to check server state
 app.get('/debug', (req, res) => {
+  const sessionsData = {};
+  
+  for (const [participantId, session] of sessions) {
+    sessionsData[participantId] = {
+      participantParity: session.participantParity,
+      currentStage: session.currentStage,
+      ticketsCount: session.tickets.length,
+      agents: session.agents.map(a => ({ name: a.name, status: a.status })),
+      currentAiMode: session.currentAiMode,
+      spawnIntervalActive: !!session.spawnInterval,
+      botCheckIntervalActive: !!session.botCheckInterval,
+      stageStartTime: session.stageStartTime,
+      stageDuration: session.stageDuration,
+      socketConnections: session.socketConnections.size
+    };
+  }
+  
   res.json({
-    currentStage,
-    participantParity,
-    ticketsCount: tickets.length,
-    agents: agents.map(a => ({ name: a.name, status: a.status })),
-    currentAiMode,
-    spawnIntervalActive: !!spawnInterval,
-    stageStartTime,
-    stageDuration
+    totalSessions: sessions.size,
+    sessions: sessionsData,
+    totalConnections: io.engine.clientsCount
   });
 });
 
@@ -1107,7 +1429,7 @@ app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'OK',
     timestamp: new Date().toISOString(),
-    stage: currentStage,
+    totalSessions: sessions.size,
     connectedClients: io.engine.clientsCount,
     environment: process.env.NODE_ENV || 'development'
   });
@@ -1206,4 +1528,5 @@ server.listen(PORT, () => {
   console.log(`📁 Loaded ${preExperimentQuestions.length} pre-experiment questions`);
   console.log(`📁 Loaded ${ticketTemplates.length} ticket templates`);
   console.log(`📁 Loaded ${kbArticles.length} KB articles`);
+  console.log(`🧠 Session-based architecture ready - each participant has isolated state`);
 });

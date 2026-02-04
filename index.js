@@ -1519,6 +1519,35 @@ app.get('*', (req, res) => {
   }
 });
 
+// Endpoint for resetting participant data
+app.post('/api/reset-participant', async (req, res) => {
+  try {
+    const { participantId } = req.body;
+
+    if (!participantId) {
+      return res.status(400).json({ error: 'Missing participantId' });
+    }
+
+    // Удаляем сессию из памяти сервера
+    if (sessions.has(participantId)) {
+      cleanupSession(participantId);
+    }
+
+    await writeLog('PARTICIPANT_RESET', 'System', {
+      participantId,
+      timestamp: new Date().toISOString()
+    });
+
+    res.json({ 
+      success: true, 
+      message: `Participant ${participantId} data has been reset`
+    });
+  } catch (error) {
+    console.error('Error resetting participant data:', error);
+    res.status(500).json({ error: 'Failed to reset participant data' });
+  }
+});
+
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);

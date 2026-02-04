@@ -207,6 +207,7 @@ let currentAiMode = 'normal';
 let participantParity = null; // 'even' or 'odd'
 let stageStartTime = null; // Time when stage 2 started
 let stageDuration = null; // Duration of stage 2 in ms
+let spawnInterval = null; // Interval for spawning tickets
 
 // --- LOGGING FUNCTIONS (REMOVED DATABASE LOGGING) ---
 const writeLog = async (action, user, details) => {
@@ -271,7 +272,7 @@ const spawnTicket = async (isCritical = false, tutorialTicket = false) => {
   tickets.push(newTicket);
   io.emit('ticket:new', newTicket);
   
-  // REMOVED: Save to database - tickets are not stored
+  console.log(`🎫 Spawned ${tutorialTicket ? 'tutorial' : ''} ticket: ${newTicket.title} (Critical: ${isCritical})`);
   
   // Для критических тикетов сразу отправляем специальное уведомление
   if (isCritical && !tutorialTicket) {
@@ -439,18 +440,40 @@ const handleAutonomousAI = async (ticket) => {
   }, solveTime);
 };
 
-// Auto-spawn tickets only during experiment stage (stage 2)
-setInterval(async () => { 
-  if (currentStage === 2 && Math.random() > 0.7) {
-    // Проверяем, прошла ли половина времени смены
-    const timeElapsed = Date.now() - stageStartTime;
-    const isSecondHalf = stageStartTime && stageDuration && timeElapsed > (stageDuration / 2);
-    
-    // Критические тикеты спаунятся только во второй половине времени смены
-    const isCritical = isSecondHalf && Math.random() < 0.1;
-    await spawnTicket(isCritical);
+// Start/stop ticket spawning based on stage
+const startTicketSpawning = () => {
+  // Clear existing interval if any
+  if (spawnInterval) {
+    clearInterval(spawnInterval);
+    spawnInterval = null;
   }
-}, 8000);
+
+  if (currentStage === 2) {
+    console.log('🚀 Starting ticket spawning for stage 2');
+    spawnInterval = setInterval(async () => { 
+      console.log(`🎲 Checking to spawn ticket (stage: ${currentStage}, parity: ${participantParity})`);
+      
+      if (currentStage === 2 && Math.random() > 0.7) {
+        // Проверяем, прошла ли половина времени смены
+        const timeElapsed = Date.now() - stageStartTime;
+        const isSecondHalf = stageStartTime && stageDuration && timeElapsed > (stageDuration / 2);
+        
+        // Критические тикеты спаунятся только во второй половине времени смены
+        const isCritical = isSecondHalf && Math.random() < 0.1;
+        console.log(`🎯 Spawning ${isCritical ? 'CRITICAL ' : ''}ticket in stage 2`);
+        await spawnTicket(isCritical);
+      }
+    }, 8000);
+  }
+};
+
+const stopTicketSpawning = () => {
+  if (spawnInterval) {
+    clearInterval(spawnInterval);
+    spawnInterval = null;
+    console.log('🛑 Stopped ticket spawning');
+  }
+};
 
 setInterval(async () => {
   // Bots active only at stage 2 for odd participants
@@ -945,20 +968,30 @@ app.post('/admin/change-ai-mode', async (req, res) => {
 });
 
 app.post('/admin/start', async (req, res) => {
-  currentStage = req.body.stage;
-  currentAiMode = req.body.aiMode || 'normal';
-  participantParity = req.body.participantParity || null;
+  const { stage, aiMode, participantParity: parity } = req.body;
   
+  currentStage = stage;
+  currentAiMode = aiMode || 'normal';
+  participantParity = parity || null;
+  
+  console.log(`🚀 Starting stage ${currentStage} for participant ${parity} (AI mode: ${currentAiMode})`);
+  
+  // Clear existing tickets
   tickets = [];
+  
+  // Clear any existing spawn interval
+  stopTicketSpawning();
   
   // At stage 1 (tutorial) all bots offline
   if (currentStage === 1) {
     agents.forEach(a => a.status = 'offline');
-    // Spawn 3 tutorial tickets
+    console.log('🎮 Starting tutorial - spawning 3 tutorial tickets');
+    
+    // Spawn 3 tutorial tickets immediately
     for (let i = 0; i < 3; i++) {
       setTimeout(async () => {
         await spawnTicket(false, true);
-      }, i * 1000);
+      }, i * 1500); // Stagger spawns by 1.5 seconds
     }
   } 
   // At stage 2: if odd participant - bots online (available for delegation)
@@ -967,14 +1000,19 @@ app.post('/admin/start', async (req, res) => {
     if (participantParity === 'odd') {
       // For odd participants (work with colleagues) bots should be online
       agents.forEach(a => a.status = 'online');
+      console.log('👥 Setting bots to online for odd participant');
     } else {
       // For even participants (work with AI) bots should be offline
       agents.forEach(a => a.status = 'offline');
+      console.log('🤖 Setting bots to offline for even participant');
     }
     
     // Set stage start time and duration for critical ticket timing
     stageStartTime = Date.now();
     stageDuration = SHIFT_DURATION_MS;
+    
+    // Start automatic ticket spawning for stage 2
+    startTicketSpawning();
     
     await writeLog('STAGE_2_STARTED', 'System', { 
       startTime: stageStartTime, 
@@ -991,12 +1029,19 @@ app.post('/admin/start', async (req, res) => {
     aiMode: currentAiMode,
     participantParity
   });
+  
   await writeLog('STAGE_START', 'ADMIN', { 
     stage: currentStage, 
     aiMode: currentAiMode,
     participantParity
   });
-  res.json({ success: true });
+  
+  res.json({ 
+    success: true, 
+    stage: currentStage,
+    aiMode: currentAiMode,
+    participantParity
+  });
 });
 
 // Endpoint to spawn tutorial ticket
@@ -1015,6 +1060,20 @@ app.post('/admin/critical', async (req, res) => {
     success: true, 
     message: 'Critical ticket created',
     ticket: criticalTicket
+  });
+});
+
+// Debug endpoint to check server state
+app.get('/debug', (req, res) => {
+  res.json({
+    currentStage,
+    participantParity,
+    ticketsCount: tickets.length,
+    agents: agents.map(a => ({ name: a.name, status: a.status })),
+    currentAiMode,
+    spawnIntervalActive: !!spawnInterval,
+    stageStartTime,
+    stageDuration
   });
 });
 

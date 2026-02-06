@@ -564,28 +564,32 @@ const startTicketSpawningForSession = (session) => {
 
     // Запускаем спаун тикетов с фиксированной логикой
     session.spawnInterval = setInterval(async () => {
-      console.log(`🎲 Checking to spawn ticket for ${session.participantId} (stage: ${session.currentStage}, parity: ${session.participantParity})`);
+      try {
+        console.log(`🎲 Checking to spawn ticket for ${session.participantId} (stage: ${session.currentStage}, parity: ${session.participantParity})`);
 
-      // Проверяем условие для спауна тикета (30% вероятность)
-      if (Math.random() > 0.7) {
-        // Проверяем, прошла ли половина времени смены
-        const timeElapsed = Date.now() - session.stageStartTime;
-        const isSecondHalf = session.stageStartTime && session.stageDuration && timeElapsed > (session.stageDuration / 2);
+        // Проверяем условие для спауна тикета (30% вероятность)
+        if (Math.random() > 0.7) {
+          // Проверяем, прошла ли половина времени смены
+          const timeElapsed = Date.now() - session.stageStartTime;
+          const isSecondHalf = session.stageStartTime && session.stageDuration && timeElapsed > (session.stageDuration / 2);
 
-        console.log(`⏱️ Time elapsed for ${session.participantId}: ${timeElapsed}ms, isSecondHalf: ${isSecondHalf}`);
+          console.log(`⏱️ Time elapsed for ${session.participantId}: ${timeElapsed}ms, isSecondHalf: ${isSecondHalf}`);
 
-        // Критические тикеты спаунятся только во второй половине времени смены
-        let isCritical = false;
+          // Критические тикеты спаунятся только во второй половине времени смены
+          let isCritical = false;
 
-        // Проверяем условия для критического тикета
-        if (isSecondHalf) {
-          // Во второй половине - 40% вероятность критического тикета
-          isCritical = Math.random() < 0.4;
-          console.log(`🎯 Critical chance check for ${session.participantId}: ${isCritical ? 'CRITICAL' : 'normal'} (random: ${Math.random()})`);
+          // Проверяем условия для критического тикета
+          if (isSecondHalf) {
+            // Во второй половине - 40% вероятность критического тикета
+            isCritical = Math.random() < 0.4;
+            console.log(`🎯 Critical chance check for ${session.participantId}: ${isCritical ? 'CRITICAL' : 'normal'} (random: ${Math.random()})`);
+          }
+
+          console.log(`🎯 Spawning ${isCritical ? 'CRITICAL ' : ''}ticket in stage 2 for ${session.participantId}`);
+          await spawnTicketForSession(session, isCritical);
         }
-
-        console.log(`🎯 Spawning ${isCritical ? 'CRITICAL ' : ''}ticket in stage 2 for ${session.participantId}`);
-        await spawnTicketForSession(session, isCritical);
+      } catch (error) {
+        console.error('Error in ticket spawning interval:', error);
       }
     }, 8000); // Каждые 8 секунд
 

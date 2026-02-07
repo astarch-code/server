@@ -220,6 +220,7 @@ const getOrCreateSession = (participantId, participantParity) => {
       stageDuration: null,
       spawnInterval: null,
       botCheckInterval: null,
+      stageTimerInterval: null, // Новое поле для таймера смены
       socketConnections: new Set() // Store socket IDs connected to this session
     };
 
@@ -251,10 +252,63 @@ const cleanupSession = (participantId) => {
       clearInterval(session.botCheckInterval);
       console.log(`🛑 Cleared bot check interval for ${participantId}`);
     }
+    if (session.stageTimerInterval) {
+      clearInterval(session.stageTimerInterval);
+      console.log(`🛑 Cleared stage timer interval for ${participantId}`);
+    }
 
     // Remove session
     sessions.delete(participantId);
     console.log(`🗑️ Cleaned up session for ${participantId}`);
+  }
+};
+
+// --- TIMER FUNCTIONS ---
+const startStageTimerForSession = (session) => {
+  // Очищаем предыдущий интервал, если он был
+  if (session.stageTimerInterval) {
+    clearInterval(session.stageTimerInterval);
+    session.stageTimerInterval = null;
+  }
+
+  if (session.currentStage === 2 && session.stageStartTime && session.stageDuration) {
+    console.log(`⏱️ Starting stage timer for session ${session.participantId}`);
+
+    session.stageTimerInterval = setInterval(() => {
+      const timeElapsed = Date.now() - session.stageStartTime;
+      const timeLeftMs = Math.max(0, session.stageDuration - timeElapsed);
+      const timeLeftSec = Math.floor(timeLeftMs / 1000);
+
+      // Отправляем обновление времени всем клиентам в сессии
+      session.socketConnections.forEach(socketId => {
+        const socket = io.sockets.sockets.get(socketId);
+        if (socket) {
+          socket.emit('shift:timer:update', { timeLeft: timeLeftSec });
+        }
+      });
+
+      // Если время вышло, завершаем смену
+      if (timeLeftMs <= 0) {
+        clearInterval(session.stageTimerInterval);
+        session.stageTimerInterval = null;
+
+        // Отправляем событие о завершении времени
+        session.socketConnections.forEach(socketId => {
+          const socket = io.sockets.sockets.get(socketId);
+          if (socket) {
+            socket.emit('shift:timeout');
+          }
+        });
+      }
+    }, 1000); // Обновляем каждую секунду
+  }
+};
+
+const stopStageTimerForSession = (session) => {
+  if (session.stageTimerInterval) {
+    clearInterval(session.stageTimerInterval);
+    session.stageTimerInterval = null;
+    console.log(`🛑 Stopped stage timer for ${session.participantId}`);
   }
 };
 
@@ -603,6 +657,9 @@ const stopTicketSpawningForSession = (session) => {
     session.spawnInterval = null;
     console.log(`🛑 Stopped ticket spawning for ${session.participantId}`);
   }
+  
+  // Также очищаем таймер смены
+  stopStageTimerForSession(session);
 };
 
 // Start bot lifecycle for a specific session
@@ -724,14 +781,26 @@ io.on('connection', (socket) => {
   });
 
   socket.on('ticket:status:update', async ({ ticketId, newStatus }) => {
+    console.log(`🔧 DEBUG: Received ticket:status:update for ticket ${ticketId}, status ${newStatus}`);
+    
     const session = getSessionBySocket(socket.id);
     if (!session) {
       console.error('❌ No session found for socket:', socket.id);
+      console.log('Available sessions:', Array.from(sessions.keys()));
       return;
     }
 
+    console.log(`🔧 DEBUG: Found session for participant ${session.participantId}`);
+    console.log(`🔧 DEBUG: Tickets in session: ${session.tickets.length}`);
+
     const ticket = session.tickets.find(t => t.id === ticketId);
-    if (!ticket) return;
+    if (!ticket) {
+      console.error(`❌ Ticket ${ticketId} not found in session`);
+      console.log(`🔧 DEBUG: Available ticket IDs: ${session.tickets.map(t => t.id).join(', ')}`);
+      return;
+    }
+
+    console.log(`🔧 DEBUG: Updating ticket ${ticketId} from ${ticket.status} to ${newStatus}`);
 
     ticket.status = newStatus;
     if (newStatus === 'in Progress') {
@@ -762,6 +831,8 @@ io.on('connection', (socket) => {
         sock.emit('tickets:update', session.tickets);
       }
     });
+
+    console.log(`✅ DEBUG: Ticket ${ticketId} updated successfully`);
   });
 
   socket.on('ticket:solve', async (data) => {
@@ -1332,6 +1403,7 @@ app.post('/admin/start', async (req, res) => {
   // Clear any existing intervals
   stopTicketSpawningForSession(session);
   stopBotLifecycleForSession(session);
+  stopStageTimerForSession(session);
 
   // Reset agents to base state
   session.agents = JSON.parse(JSON.stringify(baseAgents));
@@ -1370,6 +1442,9 @@ app.post('/admin/start', async (req, res) => {
 
     // Start automatic ticket spawning for stage 2
     startTicketSpawningForSession(session);
+    
+    // Start stage timer
+    startStageTimerForSession(session);
 
     await writeLog('STAGE_2_STARTED', 'System', {
       participantId,
@@ -1463,6 +1538,7 @@ app.get('/debug', (req, res) => {
       currentAiMode: session.currentAiMode,
       spawnIntervalActive: !!session.spawnInterval,
       botCheckIntervalActive: !!session.botCheckInterval,
+      stageTimerActive: !!session.stageTimerInterval,
       stageStartTime: session.stageStartTime,
       stageDuration: session.stageDuration,
       socketConnections: session.socketConnections.size

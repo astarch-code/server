@@ -172,7 +172,6 @@ async function initDatabase() {
       )
     `);
 
-    // Remove other tables that are not needed (tickets, logs, etc.)
     console.log('Survey database tables initialized successfully');
   } catch (error) {
     console.error('Error initializing database:', error);
@@ -222,7 +221,9 @@ const getOrCreateSession = (participantId, participantParity) => {
       spawnInterval: null,
       botCheckInterval: null,
       stageTimerInterval: null,
-      socketConnections: new Set() // Store socket IDs connected to this session
+      deadlineCheckInterval: null, // NEW: для проверки дедлайнов
+      socketConnections: new Set(), // Store socket IDs connected to this session
+      isActive: false // NEW: флаг активности сессии
     };
 
     sessions.set(participantId, newSession);
@@ -236,7 +237,6 @@ const getSessionBySocket = (socketId) => {
   const participantId = socketToParticipant.get(socketId);
   if (!participantId) {
     console.log(`❌ No participantId found for socket: ${socketId}`);
-    console.log(`🔍 Current socketToParticipant mapping:`, Array.from(socketToParticipant.entries()));
     return null;
   }
   
@@ -252,7 +252,7 @@ const getSessionBySocket = (socketId) => {
 const cleanupSession = (participantId) => {
   const session = sessions.get(participantId);
   if (session) {
-    // Clear intervals
+    // Clear all intervals
     if (session.spawnInterval) {
       clearInterval(session.spawnInterval);
       console.log(`🛑 Cleared spawn interval for ${participantId}`);
@@ -265,6 +265,13 @@ const cleanupSession = (participantId) => {
       clearInterval(session.stageTimerInterval);
       console.log(`🛑 Cleared stage timer interval for ${participantId}`);
     }
+    if (session.deadlineCheckInterval) {
+      clearInterval(session.deadlineCheckInterval);
+      console.log(`🛑 Cleared deadline check interval for ${participantId}`);
+    }
+
+    // Deactivate session
+    session.isActive = false;
 
     // Remove socket mappings
     for (const [socketId, pid] of socketToParticipant.entries()) {
@@ -273,9 +280,11 @@ const cleanupSession = (participantId) => {
       }
     }
 
-    // Remove session
-    sessions.delete(participantId);
-    console.log(`🗑️ Cleaned up session for ${participantId}`);
+    // Remove session only if no connections
+    if (session.socketConnections.size === 0) {
+      sessions.delete(participantId);
+      console.log(`🗑️ Cleaned up session for ${participantId}`);
+    }
   }
 };
 
@@ -328,9 +337,100 @@ const stopStageTimerForSession = (session) => {
   }
 };
 
+// --- DEADLINE CHECK FUNCTION (per session) ---
+const startDeadlineCheckForSession = (session) => {
+  // Clear existing interval if any
+  if (session.deadlineCheckInterval) {
+    clearInterval(session.deadlineCheckInterval);
+    session.deadlineCheckInterval = null;
+  }
+
+  console.log(`⏰ Starting deadline check for session ${session.participantId}`);
+
+  session.deadlineCheckInterval = setInterval(() => {
+    const now = Date.now();
+    let changed = false;
+
+    session.tickets.forEach(ticket => {
+      // Skip tutorial tickets for overdue checks
+      if (ticket.isTutorial) return;
+
+      if (
+        ticket.status === 'not assigned' &&
+        ticket.deadlineAssign &&
+        now > ticket.deadlineAssign &&
+        !ticket.assignOverdueReported
+      ) {
+        ticket.assignOverdueReported = true;
+        changed = true;
+
+        session.socketConnections.forEach(socketId => {
+          const socket = io.sockets.sockets.get(socketId);
+          if (socket) {
+            socket.emit('client:notification', {
+              type: 'warning',
+              message: ticket.isCritical
+                ? '🚨 CRITICAL TICKET OVERDUE: Server still down! Immediate assignment required!'
+                : 'You took too long to assign the request!'
+            });
+          }
+        });
+      }
+
+      if (
+        ticket.status === 'in Progress' &&
+        ticket.deadlineSolve &&
+        now > ticket.deadlineSolve &&
+        !ticket.solveOverdueReported
+      ) {
+        ticket.solveOverdueReported = true;
+        ticket.messages = ticket.messages || [];
+        
+        ticket.messages.push({
+          from: 'client',
+          text: ticket.isCritical
+            ? '🚨 CRITICAL: Time is up! System outage causing business losses!'
+            : 'You took too long to respond. Client is dissatisfied.',
+          timestamp: Date.now()
+        });
+
+        changed = true;
+
+        session.socketConnections.forEach(socketId => {
+          const socket = io.sockets.sockets.get(socketId);
+          if (socket) {
+            socket.emit('client:notification', {
+              type: 'warning',
+              message: ticket.isCritical
+                ? '🚨 CRITICAL TICKET SOLUTION OVERDUE: Business operations affected!'
+                : 'Solution took too long. Client is dissatisfied!'
+            });
+          }
+        });
+      }
+    });
+
+    if (changed) {
+      session.socketConnections.forEach(socketId => {
+        const socket = io.sockets.sockets.get(socketId);
+        if (socket) {
+          socket.emit('tickets:update', session.tickets);
+        }
+      });
+    }
+  }, 5000); // Check every 5 seconds
+};
+
+const stopDeadlineCheckForSession = (session) => {
+  if (session.deadlineCheckInterval) {
+    clearInterval(session.deadlineCheckInterval);
+    session.deadlineCheckInterval = null;
+    console.log(`🛑 Stopped deadline check for ${session.participantId}`);
+  }
+};
+
 // --- LOGGING FUNCTIONS ---
 const writeLog = async (action, user, details) => {
-  // Only log to console, not to database
   console.log(`[LOG] ${action} (${user}): ${JSON.stringify(details)}`);
 };
 
@@ -363,6 +463,12 @@ const savePostExperimentResponse = async (participantId, parity, questionId, que
 // --- SESSION-SPECIFIC LOGIC ---
 
 const spawnTicketForSession = async (session, isCritical = false, tutorialTicket = false) => {
+  // Проверяем, активна ли сессия
+  if (!session.isActive || session.socketConnections.size === 0) {
+    console.log(`⚠️ Skipping ticket spawn - session ${session.participantId} is not active`);
+    return null;
+  }
+
   // Убедитесь, что ticketTemplates загружены
   if (!ticketTemplates || ticketTemplates.length === 0) {
     console.error('❌ No ticket templates loaded!');
@@ -635,6 +741,12 @@ const startTicketSpawningForSession = (session) => {
     // Запускаем спаун тикетов с фиксированной логикой
     session.spawnInterval = setInterval(async () => {
       try {
+        // Проверяем, активна ли сессия
+        if (!session.isActive || session.socketConnections.size === 0) {
+          console.log(`⚠️ Skipping ticket spawn - session ${session.participantId} is not active`);
+          return;
+        }
+
         console.log(`🎲 Checking to spawn ticket for ${session.participantId} (stage: ${session.currentStage}, parity: ${session.participantParity})`);
 
         // Проверяем условие для спауна тикета (30% вероятность)
@@ -690,6 +802,12 @@ const startBotLifecycleForSession = (session) => {
     console.log(`🤖 Starting bot lifecycle for session ${session.participantId}`);
 
     session.botCheckInterval = setInterval(() => {
+      // Проверяем, активна ли сессия
+      if (!session.isActive || session.socketConnections.size === 0) {
+        console.log(`⚠️ Skipping bot lifecycle - session ${session.participantId} is not active`);
+        return;
+      }
+
       let changed = false;
 
       session.agents.forEach(agent => {
@@ -783,9 +901,11 @@ io.on('connection', (socket) => {
     // Add socket to session connections
     session.socketConnections.add(socket.id);
     socketToParticipant.set(socket.id, participantId);
+    
+    // Activate session
+    session.isActive = true;
 
     console.log(`🔗 Socket ${socket.id} connected to session ${participantId}. Total connections: ${session.socketConnections.size}`);
-    console.log(`📋 Current socketToParticipant mapping:`, Array.from(socketToParticipant.entries()));
 
     // Send session data to the socket
     socket.emit('init', {
@@ -804,8 +924,6 @@ io.on('connection', (socket) => {
     const session = getSessionBySocket(socket.id);
     if (!session) {
       console.error('❌ No session found for socket:', socket.id);
-      console.log('📋 Current sessions:', Array.from(sessions.keys()));
-      console.log('📋 Current socketToParticipant:', Array.from(socketToParticipant.entries()));
       return;
     }
 
@@ -992,10 +1110,18 @@ io.on('connection', (socket) => {
     }
 
     // AI available only at stage 2 for even participants
-    if (session.currentStage !== 2 || session.participantParity !== 'even') return;
+    if (session.currentStage !== 2 || session.participantParity !== 'even') {
+      console.log(`⚠️ AI not available: stage=${session.currentStage}, parity=${session.participantParity}`);
+      return;
+    }
 
     const ticket = session.tickets.find(t => t.id === ticketId);
-    if (!ticket) return;
+    if (!ticket) {
+      console.error(`❌ Ticket ${ticketId} not found`);
+      return;
+    }
+
+    console.log(`🤖 Processing AI request for ticket: ${ticketId}, title: "${ticket.title}"`);
 
     const keywords = ticket.title.toLowerCase().split(' ');
     const foundKb = kbArticles.find(k => keywords.some(word => word.length > 3 && k.title.toLowerCase().includes(word)));
@@ -1011,7 +1137,22 @@ io.on('connection', (socket) => {
       foundKbId = foundKb.id;
     }
 
+    console.log(`🤖 AI response for ${ticketId}: ${responseText.substring(0, 50)}...`);
+
+    // Отправляем ответ обратно на тот же сокет
     socket.emit('ai:response', { ticketId, text: responseText, kbId: foundKbId });
+    
+    // Также отправляем уведомление всем клиентам в сессии
+    session.socketConnections.forEach(socketId => {
+      const sock = io.sockets.sockets.get(socketId);
+      if (sock && sock.id !== socket.id) {
+        sock.emit('ai:notification', {
+          type: 'advice_given',
+          message: `AI provided advice for ticket #${ticket.id.slice(0, 5)}`
+        });
+      }
+    });
+
     writeLog('AI_ASK', 'participant', {
       ticketId,
       participantId: session.participantId,
@@ -1033,12 +1174,26 @@ io.on('connection', (socket) => {
     }
 
     // Delegation available only at stage 2 for odd participants
-    if (session.currentStage !== 2 || session.participantParity !== 'odd') return;
+    if (session.currentStage !== 2 || session.participantParity !== 'odd') {
+      console.log(`⚠️ Delegation not available: stage=${session.currentStage}, parity=${session.participantParity}`);
+      socket.emit('bot:notification', { botName: 'System', message: "Delegation is only available in stage 2 for odd participants", type: 'error' });
+      return;
+    }
 
     const ticket = session.tickets.find(t => t.id === ticketId);
     const agent = session.agents.find(a => a.id === botId);
 
-    if (!ticket || !agent) return;
+    if (!ticket) {
+      console.error(`❌ Ticket ${ticketId} not found`);
+      socket.emit('bot:notification', { botName: 'System', message: "Ticket not found", type: 'error' });
+      return;
+    }
+    
+    if (!agent) {
+      console.error(`❌ Agent ${botId} not found`);
+      socket.emit('bot:notification', { botName: 'System', message: "Colleague not found", type: 'error' });
+      return;
+    }
 
     if (agent.status === 'away') {
       socket.emit('bot:notification', { botName: agent.name, message: "is not at the place.", type: 'warning' });
@@ -1149,8 +1304,11 @@ io.on('connection', (socket) => {
     // Останавливаем спавн тикетов для туториала
     stopTicketSpawningForSession(session);
     
-    // Очищаем тикеты туториала
-    session.tickets = [];
+    // Останавливаем проверку дедлайнов для туториала
+    stopDeadlineCheckForSession(session);
+    
+    // Фильтруем только tutorial тикеты для удаления
+    session.tickets = session.tickets.filter(ticket => !ticket.isTutorial);
     
     // Сбрасываем агентов в базовое состояние
     session.agents = JSON.parse(JSON.stringify(baseAgents));
@@ -1162,14 +1320,6 @@ io.on('connection', (socket) => {
       success: true,
       currentStage: 2,
       participantParity: session.participantParity
-    });
-
-    // CRITICAL FIX: Force update of tickets on client to remove tutorial tickets immediately
-    session.socketConnections.forEach(socketId => {
-      const sock = io.sockets.sockets.get(socketId);
-      if (sock) {
-        sock.emit('tickets:update', []);
-      }
     });
 
     await writeLog('TUTORIAL_COMPLETED', 'System', {
@@ -1189,6 +1339,18 @@ io.on('connection', (socket) => {
       if (session) {
         session.socketConnections.delete(socket.id);
         console.log(`🔌 Socket ${socket.id} disconnected from session ${participantId}. Remaining connections: ${session.socketConnections.size}`);
+        
+        // Если нет подключенных клиентов, деактивируем сессию
+        if (session.socketConnections.size === 0) {
+          session.isActive = false;
+          console.log(`💤 Session ${participantId} is now inactive (no clients connected)`);
+          
+          // Останавливаем все интервалы для этой сессии
+          stopTicketSpawningForSession(session);
+          stopBotLifecycleForSession(session);
+          stopStageTimerForSession(session);
+          stopDeadlineCheckForSession(session);
+        }
       }
       socketToParticipant.delete(socket.id);
     }
@@ -1197,69 +1359,7 @@ io.on('connection', (socket) => {
   });
 });
 
-// Global interval for checking ticket deadlines (runs for all sessions)
-setInterval(() => {
-  const now = Date.now();
-
-  for (const [participantId, session] of sessions) {
-    session.tickets.forEach(ticket => {
-      // Skip tutorial tickets for overdue checks
-      if (ticket.isTutorial) return;
-
-      if (
-        ticket.status === 'not assigned' &&
-        ticket.deadlineAssign &&
-        now > ticket.deadlineAssign &&
-        !ticket.assignOverdueReported
-      ) {
-        ticket.assignOverdueReported = true;
-
-        session.socketConnections.forEach(socketId => {
-          const socket = io.sockets.sockets.get(socketId);
-          if (socket) {
-            socket.emit('client:notification', {
-              type: 'warning',
-              message: ticket.isCritical
-                ? '🚨 CRITICAL TICKET OVERDUE: Server still down! Immediate assignment required!'
-                : 'You took too long to assign the request!'
-            });
-          }
-        });
-      }
-
-      if (
-        ticket.status === 'in Progress' &&
-        ticket.deadlineSolve &&
-        now > ticket.deadlineSolve &&
-        !ticket.solveOverdueReported
-      ) {
-        ticket.solveOverdueReported = true;
-        ticket.messages = ticket.messages || [];
-
-        ticket.messages.push({
-          from: 'client',
-          text: ticket.isCritical
-            ? '🚨 CRITICAL: Time is up! System outage causing business losses!'
-            : 'You took too long to respond. Client is dissatisfied.',
-          timestamp: Date.now()
-        });
-
-        session.socketConnections.forEach(socketId => {
-          const socket = io.sockets.sockets.get(socketId);
-          if (socket) {
-            socket.emit('client:notification', {
-              type: 'warning',
-              message: ticket.isCritical
-                ? '🚨 CRITICAL TICKET SOLUTION OVERDUE: Business operations affected!'
-                : 'Solution took too long. Client is dissatisfied!'
-            });
-            socket.emit('tickets:update', session.tickets);
-          }
-        });
-      }
-    });
-  }
-}, 5000);
+// УДАЛЕН глобальный интервал для проверки дедлайнов - теперь это делается на уровне сессии
 
 // Endpoint for pre-experiment survey questions
 app.get('/api/survey/pre-experiment', (req, res) => {
@@ -1382,13 +1482,22 @@ app.post('/admin/change-ai-mode', async (req, res) => {
     return res.status(403).json({ error: 'AI mode can only be changed by even participants during experiment stage' });
   }
 
+  // Сохраняем предыдущее состояние тикетов
+  const previousTickets = [...session.tickets];
+  
   session.currentAiMode = aiMode;
+
+  // НЕ очищаем тикеты при смене режима ИИ
+  // Восстанавливаем тикеты (на случай, если они были потеряны)
+  session.tickets = previousTickets;
 
   // Broadcast the change to all connected clients in this session
   session.socketConnections.forEach(socketId => {
     const socket = io.sockets.sockets.get(socketId);
     if (socket) {
       socket.emit('ai:mode_changed', { aiMode: session.currentAiMode });
+      // Также отправляем обновление тикетов
+      socket.emit('tickets:update', session.tickets);
     }
   });
 
@@ -1396,10 +1505,11 @@ app.post('/admin/change-ai-mode', async (req, res) => {
     participantId,
     aiMode: session.currentAiMode,
     stage: session.currentStage,
-    parity: parity
+    parity: parity,
+    ticketsCount: session.tickets.length
   });
 
-  res.json({ success: true, aiMode: session.currentAiMode });
+  res.json({ success: true, aiMode: session.currentAiMode, ticketsCount: session.tickets.length });
 });
 
 app.post('/admin/start', async (req, res) => {
@@ -1416,28 +1526,33 @@ app.post('/admin/start', async (req, res) => {
 
   console.log(`🚀 Starting stage ${session.currentStage} for participant ${participantId} (${parity}) (AI mode: ${session.currentAiMode})`);
 
-  // Clear existing tickets
-  session.tickets = [];
-
-  // Clear any existing intervals
+  // Clear existing intervals
   stopTicketSpawningForSession(session);
   stopBotLifecycleForSession(session);
   stopStageTimerForSession(session);
-
-  // Reset agents to base state
-  session.agents = JSON.parse(JSON.stringify(baseAgents));
+  stopDeadlineCheckForSession(session);
 
   // At stage 1 (tutorial) all bots offline
   if (session.currentStage === 1) {
-    session.agents.forEach(a => a.status = 'offline');
-    console.log(`🎮 Starting tutorial for ${participantId} - spawning 3 tutorial tickets`);
-
-    // Spawn 3 tutorial tickets immediately
-    for (let i = 0; i < 3; i++) {
-      setTimeout(async () => {
-        await spawnTicketForSession(session, false, true);
-      }, i * 1500); // Stagger spawns by 1.5 seconds
+    // Для туториала очищаем тикеты только если их нет
+    if (session.tickets.length === 0) {
+      session.tickets = [];
     }
+    
+    session.agents.forEach(a => a.status = 'offline');
+    console.log(`🎮 Starting tutorial for ${participantId}`);
+
+    // Спауним tutorial тикеты только если их нет
+    if (session.tickets.filter(t => t.isTutorial).length === 0) {
+      for (let i = 0; i < 3; i++) {
+        setTimeout(async () => {
+          await spawnTicketForSession(session, false, true);
+        }, i * 1500); // Stagger spawns by 1.5 seconds
+      }
+    }
+    
+    // Запускаем проверку дедлайнов для туториала (без дедлайнов, но для уведомлений)
+    startDeadlineCheckForSession(session);
   }
   // At stage 2: if odd participant - bots online (available for delegation)
   // if even - bots offline (work with AI)
@@ -1464,6 +1579,9 @@ app.post('/admin/start', async (req, res) => {
     
     // Start stage timer
     startStageTimerForSession(session);
+    
+    // Start deadline check
+    startDeadlineCheckForSession(session);
 
     await writeLog('STAGE_2_STARTED', 'System', {
       participantId,
@@ -1492,14 +1610,16 @@ app.post('/admin/start', async (req, res) => {
     participantId,
     stage: session.currentStage,
     aiMode: session.currentAiMode,
-    participantParity: session.participantParity
+    participantParity: session.participantParity,
+    ticketsCount: session.tickets.length
   });
 
   res.json({
     success: true,
     stage: session.currentStage,
     aiMode: session.currentAiMode,
-    participantParity: session.participantParity
+    participantParity: session.participantParity,
+    ticketsCount: session.tickets.length
   });
 });
 
@@ -1553,13 +1673,16 @@ app.get('/debug', (req, res) => {
       participantParity: session.participantParity,
       currentStage: session.currentStage,
       ticketsCount: session.tickets.length,
+      tickets: session.tickets.map(t => ({ id: t.id.slice(0, 5), title: t.title, status: t.status, isTutorial: t.isTutorial })),
       agents: session.agents.map(a => ({ name: a.name, status: a.status })),
       currentAiMode: session.currentAiMode,
       spawnIntervalActive: !!session.spawnInterval,
       botCheckIntervalActive: !!session.botCheckInterval,
       stageTimerActive: !!session.stageTimerInterval,
+      deadlineCheckActive: !!session.deadlineCheckInterval,
       stageStartTime: session.stageStartTime,
       stageDuration: session.stageDuration,
+      isActive: session.isActive,
       socketConnections: Array.from(session.socketConnections),
       socketToParticipant: Array.from(socketToParticipant.entries()).filter(([_, pid]) => pid === participantId)
     };
@@ -1579,6 +1702,7 @@ app.get('/health', (req, res) => {
     status: 'OK',
     timestamp: new Date().toISOString(),
     totalSessions: sessions.size,
+    activeSessions: Array.from(sessions.values()).filter(s => s.isActive).length,
     connectedClients: io.engine.clientsCount,
     environment: process.env.NODE_ENV || 'development'
   });
@@ -1661,12 +1785,11 @@ app.get('/instructions.html', (req, res) => {
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) {
     res.status(404).json({ error: 'API endpoint not found' });
-  } else
-    if (req.path === '/instructions.html') {
-      res.sendFile(path.join(__dirname, 'public', 'instructions.html'));
-    } else {
-      res.sendFile(path.join(__dirname, 'public', 'index.html'));
-    }
+  } else if (req.path === '/instructions.html') {
+    res.sendFile(path.join(__dirname, 'public', 'instructions.html'));
+  } else {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  }
 });
 
 // Endpoint for resetting participant data

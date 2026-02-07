@@ -203,6 +203,7 @@ const baseAgents = [
 
 // --- SESSIONS STORAGE ---
 const sessions = new Map(); // Key: participantId, Value: session object
+const socketToParticipant = new Map(); // Key: socket.id, Value: participantId
 
 // --- SESSION MANAGEMENT FUNCTIONS ---
 const getOrCreateSession = (participantId, participantParity) => {
@@ -220,7 +221,7 @@ const getOrCreateSession = (participantId, participantParity) => {
       stageDuration: null,
       spawnInterval: null,
       botCheckInterval: null,
-      stageTimerInterval: null, // Новое поле для таймера смены
+      stageTimerInterval: null,
       socketConnections: new Set() // Store socket IDs connected to this session
     };
 
@@ -232,12 +233,20 @@ const getOrCreateSession = (participantId, participantParity) => {
 };
 
 const getSessionBySocket = (socketId) => {
-  for (const [participantId, session] of sessions) {
-    if (session.socketConnections.has(socketId)) {
-      return session;
-    }
+  const participantId = socketToParticipant.get(socketId);
+  if (!participantId) {
+    console.log(`❌ No participantId found for socket: ${socketId}`);
+    console.log(`🔍 Current socketToParticipant mapping:`, Array.from(socketToParticipant.entries()));
+    return null;
   }
-  return null;
+  
+  const session = sessions.get(participantId);
+  if (!session) {
+    console.log(`❌ No session found for participant: ${participantId}`);
+    return null;
+  }
+  
+  return session;
 };
 
 const cleanupSession = (participantId) => {
@@ -255,6 +264,13 @@ const cleanupSession = (participantId) => {
     if (session.stageTimerInterval) {
       clearInterval(session.stageTimerInterval);
       console.log(`🛑 Cleared stage timer interval for ${participantId}`);
+    }
+
+    // Remove socket mappings
+    for (const [socketId, pid] of socketToParticipant.entries()) {
+      if (pid === participantId) {
+        socketToParticipant.delete(socketId);
+      }
     }
 
     // Remove session
@@ -766,8 +782,10 @@ io.on('connection', (socket) => {
 
     // Add socket to session connections
     session.socketConnections.add(socket.id);
+    socketToParticipant.set(socket.id, participantId);
 
     console.log(`🔗 Socket ${socket.id} connected to session ${participantId}. Total connections: ${session.socketConnections.size}`);
+    console.log(`📋 Current socketToParticipant mapping:`, Array.from(socketToParticipant.entries()));
 
     // Send session data to the socket
     socket.emit('init', {
@@ -781,12 +799,13 @@ io.on('connection', (socket) => {
   });
 
   socket.on('ticket:status:update', async ({ ticketId, newStatus }) => {
-    console.log(`🔧 DEBUG: Received ticket:status:update for ticket ${ticketId}, status ${newStatus}`);
+    console.log(`🔧 DEBUG: Received ticket:status:update for ticket ${ticketId}, status ${newStatus} from socket ${socket.id}`);
     
     const session = getSessionBySocket(socket.id);
     if (!session) {
       console.error('❌ No session found for socket:', socket.id);
-      console.log('Available sessions:', Array.from(sessions.keys()));
+      console.log('📋 Current sessions:', Array.from(sessions.keys()));
+      console.log('📋 Current socketToParticipant:', Array.from(socketToParticipant.entries()));
       return;
     }
 
@@ -836,6 +855,8 @@ io.on('connection', (socket) => {
   });
 
   socket.on('ticket:solve', async (data) => {
+    console.log(`🔧 DEBUG: Received ticket:solve for ticket ${data.ticketId} from socket ${socket.id}`);
+    
     const session = getSessionBySocket(socket.id);
     if (!session) {
       console.error('❌ No session found for socket:', socket.id);
@@ -962,6 +983,8 @@ io.on('connection', (socket) => {
   });
 
   socket.on('ai:ask', ({ ticketId }) => {
+    console.log(`🔧 DEBUG: Received ai:ask for ticket ${ticketId} from socket ${socket.id}`);
+    
     const session = getSessionBySocket(socket.id);
     if (!session) {
       console.error('❌ No session found for socket:', socket.id);
@@ -1001,6 +1024,8 @@ io.on('connection', (socket) => {
   });
 
   socket.on('bot:delegate', async ({ ticketId, botId }) => {
+    console.log(`🔧 DEBUG: Received bot:delegate for ticket ${ticketId}, bot ${botId} from socket ${socket.id}`);
+    
     const session = getSessionBySocket(socket.id);
     if (!session) {
       console.error('❌ No session found for socket:', socket.id);
@@ -1155,23 +1180,17 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
+    console.log(`🔌 Socket ${socket.id} disconnected`);
+    
     // Find and remove socket from session
-    for (const [participantId, session] of sessions) {
-      if (session.socketConnections.has(socket.id)) {
+    const participantId = socketToParticipant.get(socket.id);
+    if (participantId) {
+      const session = sessions.get(participantId);
+      if (session) {
         session.socketConnections.delete(socket.id);
         console.log(`🔌 Socket ${socket.id} disconnected from session ${participantId}. Remaining connections: ${session.socketConnections.size}`);
-
-        // If no more connections, optionally cleanup session after some time
-        if (session.socketConnections.size === 0) {
-          console.log(`⏳ Session ${participantId} has no connections. Will be cleaned up in 5 minutes if no reconnection.`);
-          setTimeout(() => {
-            if (sessions.has(participantId) && sessions.get(participantId).socketConnections.size === 0) {
-              cleanupSession(participantId);
-            }
-          }, 5 * 60 * 1000); // Cleanup after 5 minutes of no connections
-        }
-        break;
       }
+      socketToParticipant.delete(socket.id);
     }
 
     console.log(`❌ Client disconnected: ${socket.id}`);
@@ -1541,14 +1560,16 @@ app.get('/debug', (req, res) => {
       stageTimerActive: !!session.stageTimerInterval,
       stageStartTime: session.stageStartTime,
       stageDuration: session.stageDuration,
-      socketConnections: session.socketConnections.size
+      socketConnections: Array.from(session.socketConnections),
+      socketToParticipant: Array.from(socketToParticipant.entries()).filter(([_, pid]) => pid === participantId)
     };
   }
 
   res.json({
     totalSessions: sessions.size,
     sessions: sessionsData,
-    totalConnections: io.engine.clientsCount
+    totalConnections: io.engine.clientsCount,
+    socketToParticipant: Array.from(socketToParticipant.entries())
   });
 });
 

@@ -1327,12 +1327,13 @@ app.post('/admin/start', async (req, res) => {
     session.agents.forEach(a => a.status = 'offline');
     console.log(`🎮 Starting tutorial for ${participantId} - spawning 3 tutorial tickets`);
 
-    // Spawn 3 tutorial tickets immediately
+    // Spawn 3 tutorial tickets immediately - ИСПРАВЛЕНИЕ: создаем все сразу без задержки
+    const tutorialTickets = [];
     for (let i = 0; i < 3; i++) {
-      setTimeout(async () => {
-        await spawnTicketForSession(session, false, true);
-      }, i * 1500); // Stagger spawns by 1.5 seconds
+      const ticket = await spawnTicketForSession(session, false, true);
+      tutorialTickets.push(ticket);
     }
+    console.log(`✅ Created ${tutorialTickets.length} tutorial tickets for ${participantId}`);
   }
   // At stage 2: if odd participant - bots online (available for delegation)
   // if even - bots offline (work with AI)

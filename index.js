@@ -1035,37 +1035,43 @@ io.on('connection', (socket) => {
     }, 3000);
   });
 
-  socket.on('tutorial:completed', async ({ participantId }) => {
-    const session = getSessionBySocket(socket.id) || sessions.get(participantId);
+  // Новый обработчик завершения туториала
+  socket.on('tutorial:completed', async (data) => {
+    console.log('📝 Tutorial completed event received:', data);
+    
+    const session = getSessionBySocket(socket.id);
     if (!session) {
-      console.error('❌ No session found for tutorial completion');
+      console.error('❌ No session found for socket:', socket.id);
       return;
     }
 
-    console.log(`🎓 Tutorial completed for ${session.participantId}. Moving to stage 2.`);
+    console.log(`📈 Updating session ${session.participantId} from stage ${session.currentStage} to stage 2`);
+    
+    // Обновляем стадию сессии на 2
     session.currentStage = 2;
     
-    // Clear tutorial tickets
+    // Останавливаем спавн тикетов для туториала
+    stopTicketSpawningForSession(session);
+    
+    // Очищаем тикеты туториала
     session.tickets = [];
-
-    // Send update back to client to confirm state change
-    session.socketConnections.forEach(socketId => {
-      const sock = io.sockets.sockets.get(socketId);
-      if (sock) {
-        sock.emit('init', {
-          tickets: session.tickets,
-          kbArticles: kbArticles,
-          agents: session.agents,
-          currentStage: session.currentStage,
-          aiMode: session.currentAiMode,
-          participantParity: session.participantParity
-        });
-      }
+    
+    // Сбрасываем агентов в базовое состояние
+    session.agents = JSON.parse(JSON.stringify(baseAgents));
+    
+    console.log(`✅ Tutorial completed for ${session.participantId}, ready for stage 2`);
+    
+    // Отправляем подтверждение клиенту
+    socket.emit('tutorial:completed:ack', {
+      success: true,
+      currentStage: 2,
+      participantParity: session.participantParity
     });
 
-    await writeLog('TUTORIAL_COMPLETED', 'participant', {
+    await writeLog('TUTORIAL_COMPLETED', 'System', {
       participantId: session.participantId,
-      stage: session.currentStage
+      stage: session.currentStage,
+      parity: session.participantParity
     });
   });
 
@@ -1327,13 +1333,12 @@ app.post('/admin/start', async (req, res) => {
     session.agents.forEach(a => a.status = 'offline');
     console.log(`🎮 Starting tutorial for ${participantId} - spawning 3 tutorial tickets`);
 
-    // Spawn 3 tutorial tickets immediately - ИСПРАВЛЕНИЕ: создаем все сразу без задержки
-    const tutorialTickets = [];
+    // Spawn 3 tutorial tickets immediately
     for (let i = 0; i < 3; i++) {
-      const ticket = await spawnTicketForSession(session, false, true);
-      tutorialTickets.push(ticket);
+      setTimeout(async () => {
+        await spawnTicketForSession(session, false, true);
+      }, i * 1500); // Stagger spawns by 1.5 seconds
     }
-    console.log(`✅ Created ${tutorialTickets.length} tutorial tickets for ${participantId}`);
   }
   // At stage 2: if odd participant - bots online (available for delegation)
   // if even - bots offline (work with AI)

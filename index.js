@@ -1035,6 +1035,40 @@ io.on('connection', (socket) => {
     }, 3000);
   });
 
+  socket.on('tutorial:completed', async ({ participantId }) => {
+    const session = getSessionBySocket(socket.id) || sessions.get(participantId);
+    if (!session) {
+      console.error('❌ No session found for tutorial completion');
+      return;
+    }
+
+    console.log(`🎓 Tutorial completed for ${session.participantId}. Moving to stage 2.`);
+    session.currentStage = 2;
+    
+    // Clear tutorial tickets
+    session.tickets = [];
+
+    // Send update back to client to confirm state change
+    session.socketConnections.forEach(socketId => {
+      const sock = io.sockets.sockets.get(socketId);
+      if (sock) {
+        sock.emit('init', {
+          tickets: session.tickets,
+          kbArticles: kbArticles,
+          agents: session.agents,
+          currentStage: session.currentStage,
+          aiMode: session.currentAiMode,
+          participantParity: session.participantParity
+        });
+      }
+    });
+
+    await writeLog('TUTORIAL_COMPLETED', 'participant', {
+      participantId: session.participantId,
+      stage: session.currentStage
+    });
+  });
+
   socket.on('disconnect', () => {
     // Find and remove socket from session
     for (const [participantId, session] of sessions) {

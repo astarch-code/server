@@ -1068,6 +1068,14 @@ io.on('connection', (socket) => {
       participantParity: session.participantParity
     });
 
+    // CRITICAL FIX: Force update of tickets on client to remove tutorial tickets immediately
+    session.socketConnections.forEach(socketId => {
+      const sock = io.sockets.sockets.get(socketId);
+      if (sock) {
+        sock.emit('tickets:update', []);
+      }
+    });
+
     await writeLog('TUTORIAL_COMPLETED', 'System', {
       participantId: session.participantId,
       stage: session.currentStage,

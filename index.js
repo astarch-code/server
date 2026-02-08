@@ -945,7 +945,10 @@ io.on('connection', (socket) => {
       assignedTo: ticket.assignedTo
     });
 
+    // Обновляем статус
+    const oldStatus = ticket.status;
     ticket.status = newStatus;
+    
     if (newStatus === 'in Progress') {
       ticket.assignedTo = 'participant';
       ticket.assignedAt = Date.now();
@@ -964,9 +967,12 @@ io.on('connection', (socket) => {
         tutorialTicket: ticket.isTutorial
       });
     } else if (newStatus === 'not assigned') {
-      ticket.assignedTo = null;
-      ticket.deadlineSolve = null;
-      console.log(`🔧 DEBUG: Ticket unassigned`);
+      // Если тикет был назначен на участника, сбрасываем
+      if (ticket.assignedTo === 'participant') {
+        ticket.assignedTo = null;
+        ticket.deadlineSolve = null;
+        console.log(`🔧 DEBUG: Ticket unassigned from participant`);
+      }
     } else if (newStatus === 'solved') {
       console.log(`🔧 DEBUG: Ticket marked as solved`);
       // Если тикет отмечается как решенный, но еще не имеет решения, создаем пустое решение
@@ -985,7 +991,7 @@ io.on('connection', (socket) => {
       }
     });
 
-    console.log(`✅ DEBUG: Ticket ${ticketId} updated successfully`);
+    console.log(`✅ DEBUG: Ticket ${ticketId} updated successfully from ${oldStatus} to ${newStatus}`);
   });
 
   socket.on('ticket:solve', async (data) => {
@@ -1223,9 +1229,9 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // Проверяем, назначен ли тикет участнику
-    if (ticket.assignedTo !== 'participant') {
-      console.error(`❌ Ticket ${ticketId} not assigned to participant (current assignee: ${ticket.assignedTo})`);
+    // Проверяем, назначен ли тикет участнику (статус 'in Progress' и assignedTo === 'participant')
+    if (ticket.status !== 'in Progress' || ticket.assignedTo !== 'participant') {
+      console.error(`❌ Ticket ${ticketId} not assigned to participant (status: ${ticket.status}, assignee: ${ticket.assignedTo})`);
       socket.emit('bot:notification', { 
         botName: 'System', 
         message: "You must assign the ticket to yourself first (status 'In Progress')", 
@@ -1294,6 +1300,23 @@ io.on('connection', (socket) => {
 
     console.log(`✅ Agent ${agent.name} accepted the delegation (trust: ${agent.trust})`);
 
+    // СРАЗУ обновляем статус тикета и назначаем на бота
+    ticket.assignedTo = agent.name;
+    ticket.messages = ticket.messages || [];
+    ticket.messages.push({
+      from: 'agent',
+      text: `${agent.name} accepted the task and started working...`,
+      timestamp: Date.now()
+    });
+
+    // Отправляем обновление всем клиентам в сессии СРАЗУ
+    session.socketConnections.forEach(socketId => {
+      const sock = io.sockets.sockets.get(socketId);
+      if (sock) {
+        sock.emit('tickets:update', session.tickets);
+      }
+    });
+
     // Отправляем уведомление о принятии задачи
     socket.emit('bot:notification', { 
       botName: agent.name, 
@@ -1301,96 +1324,80 @@ io.on('connection', (socket) => {
       type: 'info' 
     });
 
+    await writeLog('BOT_ACCEPT', agent.name, {
+      ticketId,
+      participantId: session.participantId,
+      stage: session.currentStage,
+      parity: session.participantParity
+    });
+
+    console.log(`⏳ Agent ${agent.name} started working on ticket ${ticketId}`);
+
+    // Имитируем время решения задачи ботом
+    const solveTime = ticket.isCritical ? 
+      (5000 + Math.random() * 5000) : 
+      (10000 + Math.random() * 10000);
+
     setTimeout(async () => {
-      // Обновляем статус тикета - теперь он назначен боту
-      ticket.status = 'in Progress';
-      ticket.assignedTo = agent.name;
-      ticket.deadlineSolve = Date.now() + (ticket.isCritical ? 120000 : 300000);
+      if (ticket.assignedTo === agent.name && ticket.status === 'in Progress') {
+        console.log(`✅ Agent ${agent.name} solved ticket ${ticketId}`);
+        
+        ticket.status = 'solved';
+        ticket.solution = ticket.isCritical
+          ? `🚨 CRITICAL TICKET RESOLVED by ${agent.name}: Emergency server restart performed, services restored. Root cause: hardware failure in power supply unit.`
+          : `Solved by ${agent.name} based on standard operating procedures.`;
+        ticket.solutionAuthor = agent.name;
+        ticket.linkedKbId = 'bot_auto';
 
-      // Отправляем обновление всем клиентам в сессии
-      session.socketConnections.forEach(socketId => {
-        const sock = io.sockets.sockets.get(socketId);
-        if (sock) {
-          sock.emit('tickets:update', session.tickets);
-        }
-      });
+        // Добавляем сообщение от бота
+        ticket.messages = ticket.messages || [];
+        ticket.messages.push({
+          from: 'agent',
+          text: ticket.isCritical
+            ? `🚨 CRITICAL ISSUE RESOLVED: ${agent.name} completed emergency procedures. All systems back online.`
+            : `${agent.name}: Task completed successfully. Issue resolved.`,
+          timestamp: Date.now()
+        });
 
-      await writeLog('BOT_ACCEPT', agent.name, {
-        ticketId,
-        participantId: session.participantId,
-        stage: session.currentStage,
-        parity: session.participantParity
-      });
+        // Отправляем обновление всем клиентам
+        session.socketConnections.forEach(socketId => {
+          const sock = io.sockets.sockets.get(socketId);
+          if (sock) {
+            sock.emit('tickets:update', session.tickets);
+            sock.emit('bot:notification', {
+              botName: agent.name,
+              message: `successfully solved ${ticket.isCritical ? '🚨 CRITICAL ' : ''}ticket "${ticket.title.slice(0, 30)}..."`,
+              type: 'success'
+            });
+          }
+        });
 
-      console.log(`⏳ Agent ${agent.name} started working on ticket ${ticketId}`);
+        await writeLog('BOT_SOLVE', agent.name, {
+          ticketId,
+          participantId: session.participantId,
+          stage: session.currentStage,
+          parity: session.participantParity
+        });
 
-      // Имитируем время решения задачи ботом
-      const solveTime = ticket.isCritical ? 
-        (5000 + Math.random() * 5000) : 
-        (10000 + Math.random() * 10000);
-
-      setTimeout(async () => {
-        if (ticket.status === 'in Progress' && ticket.assignedTo === agent.name) {
-          console.log(`✅ Agent ${agent.name} solved ticket ${ticketId}`);
-          
-          ticket.status = 'solved';
-          ticket.solution = ticket.isCritical
-            ? `🚨 CRITICAL TICKET RESOLVED by ${agent.name}: Emergency server restart performed, services restored. Root cause: hardware failure in power supply unit.`
-            : `Solved by ${agent.name} based on standard operating procedures.`;
-          ticket.solutionAuthor = agent.name;
-          ticket.linkedKbId = 'bot_auto';
-
-          // Добавляем сообщение от бота
-          ticket.messages = ticket.messages || [];
+        // Через секунду добавляем ответ клиента
+        setTimeout(() => {
           ticket.messages.push({
-            from: 'agent',
+            from: 'client',
             text: ticket.isCritical
-              ? `🚨 CRITICAL ISSUE RESOLVED: ${agent.name} completed emergency procedures. All systems back online.`
-              : `${agent.name}: Task completed successfully. Issue resolved.`,
-            timestamp: Date.now()
+              ? '🚨 Thank you for the quick response! Business operations restored, all systems working normally.'
+              : 'Thank you, the problem is solved! Everything works correctly now.',
+            timestamp: Date.now() + 100
           });
 
-          // Отправляем обновление всем клиентам
           session.socketConnections.forEach(socketId => {
             const sock = io.sockets.sockets.get(socketId);
             if (sock) {
               sock.emit('tickets:update', session.tickets);
-              sock.emit('bot:notification', {
-                botName: agent.name,
-                message: `successfully solved ${ticket.isCritical ? '🚨 CRITICAL ' : ''}ticket "${ticket.title.slice(0, 30)}..."`,
-                type: 'success'
-              });
             }
           });
-
-          await writeLog('BOT_SOLVE', agent.name, {
-            ticketId,
-            participantId: session.participantId,
-            stage: session.currentStage,
-            parity: session.participantParity
-          });
-
-          // Через секунду добавляем ответ клиента
-          setTimeout(() => {
-            ticket.messages.push({
-              from: 'client',
-              text: ticket.isCritical
-                ? '🚨 Thank you for the quick response! Business operations restored, all systems working normally.'
-                : 'Thank you, the problem is solved! Everything works correctly now.',
-              timestamp: Date.now() + 100
-            });
-
-            session.socketConnections.forEach(socketId => {
-              const sock = io.sockets.sockets.get(socketId);
-              if (sock) {
-                sock.emit('tickets:update', session.tickets);
-              }
-            });
-          }, 1000);
-        }
-      }, solveTime);
-
-    }, 2000);
+        }, 1000);
+      }
+    }, solveTime);
   });
 
   // Новый обработчик завершения туториала

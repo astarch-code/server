@@ -145,10 +145,21 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
-// Initialize database tables for survey responses only
+// Initialize database tables including participants table
 async function initDatabase() {
   try {
-    // Create survey responses table if not exists
+    // Create participants table FIRST (this is critical)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS participants (
+        id SERIAL PRIMARY KEY,
+        participant_uuid VARCHAR(100) UNIQUE NOT NULL,
+        parity VARCHAR(10) NOT NULL CHECK (parity IN ('odd', 'even')),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Create survey responses table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS survey_responses (
         id SERIAL PRIMARY KEY,
@@ -162,7 +173,7 @@ async function initDatabase() {
       )
     `);
 
-    // Create post_experiment_survey table if not exists
+    // Create post_experiment_survey table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS post_experiment_survey (
         id SERIAL PRIMARY KEY,
@@ -175,13 +186,126 @@ async function initDatabase() {
       )
     `);
 
-    console.log('Survey database tables initialized successfully');
+    console.log('✅ Database tables initialized successfully');
   } catch (error) {
-    console.error('Error initializing database:', error);
+    console.error('❌ Error initializing database:', error);
   }
 }
 
 initDatabase();
+
+// --- Participant Management Functions ---
+
+/**
+ * Create or retrieve a participant
+ * @param {string} participantUuid - Optional, if provided will try to retrieve existing participant
+ * @returns {Object} { participantId, parity }
+ */
+async function getOrCreateParticipant(participantUuid = null) {
+  const client = await pool.connect();
+  
+  try {
+    await client.query('BEGIN');
+    
+    if (participantUuid) {
+      // Try to retrieve existing participant
+      const result = await client.query(
+        'SELECT participant_uuid, parity FROM participants WHERE participant_uuid = $1',
+        [participantUuid]
+      );
+      
+      if (result.rows.length > 0) {
+        const participant = result.rows[0];
+        // Update last_seen timestamp
+        await client.query(
+          'UPDATE participants SET last_seen_at = CURRENT_TIMESTAMP WHERE participant_uuid = $1',
+          [participantUuid]
+        );
+        
+        await client.query('COMMIT');
+        return {
+          participantId: participant.participant_uuid,
+          parity: participant.parity,
+          isNew: false
+        };
+      }
+      // If participant not found, continue to create new one
+    }
+    
+    // Create new participant
+    const newUuid = participantUuid || uuidv4();
+    
+    // This is the CRITICAL part: let PostgreSQL assign ID atomically
+    const result = await client.query(`
+      INSERT INTO participants (participant_uuid, parity)
+      VALUES ($1, 
+        CASE 
+          WHEN (nextval('participants_id_seq') % 2) = 1 THEN 'odd'
+          ELSE 'even'
+        END
+      )
+      RETURNING participant_uuid, parity
+    `, [newUuid]);
+    
+    const participant = result.rows[0];
+    
+    await client.query('COMMIT');
+    
+    console.log(`🆕 Created new participant: ${participant.participant_uuid} (${participant.parity})`);
+    
+    return {
+      participantId: participant.participant_uuid,
+      parity: participant.parity,
+      isNew: true
+    };
+    
+  } catch (error) {
+    await client.query('ROLLBACK');
+    
+    // Handle unique constraint violation (race condition)
+    if (error.code === '23505') { // unique_violation
+      console.log(`⚠️ Participant UUID already exists, retrying: ${participantUuid}`);
+      // Try to get the existing participant
+      return getOrCreateParticipant(participantUuid);
+    }
+    
+    console.error('❌ Error in getOrCreateParticipant:', error);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Get participant by UUID
+ * @param {string} participantUuid
+ * @returns {Object|null} Participant object or null if not found
+ */
+async function getParticipant(participantUuid) {
+  try {
+    const result = await pool.query(
+      'SELECT participant_uuid, parity FROM participants WHERE participant_uuid = $1',
+      [participantUuid]
+    );
+    
+    if (result.rows.length > 0) {
+      const participant = result.rows[0];
+      // Update last_seen timestamp
+      await pool.query(
+        'UPDATE participants SET last_seen_at = CURRENT_TIMESTAMP WHERE participant_uuid = $1',
+        [participantUuid]
+      );
+      return {
+        participantId: participant.participant_uuid,
+        parity: participant.parity
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error('❌ Error getting participant:', error);
+    return null;
+  }
+}
 
 // --- DATA ---
 const BOT_LIFECYCLE_CONFIG = {
@@ -236,7 +360,6 @@ const getOrCreateSession = (participantId, participantParity) => {
   return sessions.get(participantId);
 };
 
-// ВАЖНОЕ ИЗМЕНЕНИЕ: Теперь всегда ищем сессию по participantId, а не по socket.id
 const getSessionByParticipantId = (participantId) => {
   if (!participantId) {
     console.log('❌ No participantId provided');
@@ -252,7 +375,6 @@ const getSessionByParticipantId = (participantId) => {
   return session;
 };
 
-// Старая функция для обратной совместимости
 const getSessionBySocket = (socketId) => {
   const participantId = socketToParticipant.get(socketId);
   if (!participantId) {
@@ -822,21 +944,84 @@ const getClientReaction = (isSuccess) => {
     : angry[Math.floor(Math.random() * angry.length)];
 };
 
+// --- API ENDPOINTS ---
+
+// Endpoint for participant registration/retrieval
+app.post('/api/participant', async (req, res) => {
+  try {
+    const { participantId } = req.body;
+    
+    console.log(`📝 Participant request: ${participantId ? 'existing' : 'new'}`);
+    
+    const result = await getOrCreateParticipant(participantId);
+    
+    res.json({
+      success: true,
+      participantId: result.participantId,
+      parity: result.parity,
+      isNew: result.isNew
+    });
+    
+  } catch (error) {
+    console.error('❌ Error in /api/participant:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to process participant request' 
+    });
+  }
+});
+
+// Endpoint to get participant info
+app.get('/api/participant/:participantId', async (req, res) => {
+  try {
+    const { participantId } = req.params;
+    
+    const participant = await getParticipant(participantId);
+    
+    if (participant) {
+      res.json({
+        success: true,
+        participantId: participant.participantId,
+        parity: participant.parity
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        error: 'Participant not found'
+      });
+    }
+  } catch (error) {
+    console.error('❌ Error getting participant:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to get participant' 
+    });
+  }
+});
+
 io.on('connection', (socket) => {
   console.log('✅ New client connected:', socket.id);
 
-  // ВАЖНОЕ ИЗМЕНЕНИЕ: добавляем сокет в комнату по participantId
-  socket.on('request:init', (data) => {
+  socket.on('request:init', async (data) => {
     console.log('📥 Received init request:', data);
 
-    const { participantId, participantParity } = data;
+    const { participantId } = data;
 
     if (!participantId) {
       console.error('❌ No participantId provided in init request');
+      socket.emit('init_error', { message: 'No participantId provided' });
       return;
     }
 
-    const session = getOrCreateSession(participantId, participantParity);
+    // Get participant from database
+    const participant = await getParticipant(participantId);
+    if (!participant) {
+      console.error(`❌ Participant ${participantId} not found in database`);
+      socket.emit('init_error', { message: 'Participant not found' });
+      return;
+    }
+
+    const session = getOrCreateSession(participantId, participant.parity);
 
     // Add socket to session connections
     session.socketConnections.add(socket.id);
@@ -861,7 +1046,6 @@ io.on('connection', (socket) => {
     });
   });
 
-  // ВАЖНОЕ ИЗМЕНЕНИЕ: теперь принимаем participantId из данных
   socket.on('ticket:status:update', async (data) => {
     console.log(`🔧 DEBUG: Received ticket:status:update for ticket ${data.ticketId}, status ${data.newStatus} from socket ${socket.id}`);
 
@@ -1309,7 +1493,6 @@ io.on('connection', (socket) => {
     }, solveTime);
   });
 
-  // Новый обработчик завершения туториала
   socket.on('tutorial:completed', async (data) => {
     console.log('📝 Tutorial completed event received:', data);
 
@@ -1675,7 +1858,7 @@ app.post('/admin/critical', async (req, res) => {
 });
 
 // Debug endpoint to check server state
-app.get('/debug', (req, res) => {
+app.get('/debug', async (req, res) => {
   const sessionsData = {};
 
   for (const [participantId, session] of sessions) {
@@ -1698,22 +1881,42 @@ app.get('/debug', (req, res) => {
     };
   }
 
+  // Get participants from database
+  let participants = [];
+  try {
+    const result = await pool.query('SELECT id, participant_uuid, parity, created_at, last_seen_at FROM participants ORDER BY id DESC LIMIT 20');
+    participants = result.rows;
+  } catch (error) {
+    console.error('Error getting participants:', error);
+  }
+
   res.json({
     totalSessions: sessions.size,
     sessions: sessionsData,
     totalConnections: io.engine.clientsCount,
-    socketToParticipant: Array.from(socketToParticipant.entries())
+    socketToParticipant: Array.from(socketToParticipant.entries()),
+    participants: participants
   });
 });
 
 // Health check endpoint for Render
-app.get('/health', (req, res) => {
+app.get('/health', async (req, res) => {
+  let dbStatus = 'unknown';
+  
+  try {
+    const result = await pool.query('SELECT 1 as test');
+    dbStatus = 'connected';
+  } catch (error) {
+    dbStatus = 'error';
+  }
+  
   res.status(200).json({
     status: 'OK',
     timestamp: new Date().toISOString(),
     totalSessions: sessions.size,
     activeSessions: Array.from(sessions.values()).filter(s => s.isActive).length,
     connectedClients: io.engine.clientsCount,
+    database: dbStatus,
     environment: process.env.NODE_ENV || 'development'
   });
 });
@@ -1840,5 +2043,6 @@ server.listen(PORT, () => {
   console.log(`📁 Loaded ${preExperimentQuestions.length} pre-experiment questions`);
   console.log(`📁 Loaded ${ticketTemplates.length} ticket templates`);
   console.log(`📁 Loaded ${kbArticles.length} KB articles`);
-  console.log(`🧠 Session-based architecture ready - each participant has isolated state`);
+  console.log(`🧠 Server-side participant distribution system ready`);
+  console.log(`📈 Group assignment based on PostgreSQL SERIAL id parity`);
 });

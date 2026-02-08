@@ -10,9 +10,12 @@ const path = require('path');
 const app = express();
 
 // --- CORS Configuration ---
-const allowedOrigins = process.env.FRONTEND_URL
-  ? [process.env.FRONTEND_URL, 'http://localhost:3000']
-  : ['http://localhost:3000', 'http://localhost:5173'];
+const allowedOrigins = [
+  'https://itsm-experiment.onrender.com',
+  'https://server-1vsr.onrender.com',
+  'http://localhost:3000',
+  'http://localhost:5173'
+];
 
 console.log('Allowed CORS origins:', allowedOrigins);
 
@@ -239,13 +242,13 @@ const getSessionByParticipantId = (participantId) => {
     console.log('❌ No participantId provided');
     return null;
   }
-  
+
   const session = sessions.get(participantId);
   if (!session) {
     console.log(`❌ No session found for participant: ${participantId}`);
     return null;
   }
-  
+
   return session;
 };
 
@@ -256,7 +259,7 @@ const getSessionBySocket = (socketId) => {
     console.log(`❌ No participantId found for socket: ${socketId}`);
     return null;
   }
-  
+
   return getSessionByParticipantId(participantId);
 };
 
@@ -381,7 +384,7 @@ const startDeadlineCheckForSession = (session) => {
       ) {
         ticket.solveOverdueReported = true;
         ticket.messages = ticket.messages || [];
-        
+
         ticket.messages.push({
           from: 'client',
           text: ticket.isCritical
@@ -726,7 +729,7 @@ const stopTicketSpawningForSession = (session) => {
     session.spawnInterval = null;
     console.log(`🛑 Stopped ticket spawning for ${session.participantId}`);
   }
-  
+
   // Также очищаем таймер смены
   stopStageTimerForSession(session);
 };
@@ -838,7 +841,7 @@ io.on('connection', (socket) => {
     // Add socket to session connections
     session.socketConnections.add(socket.id);
     socketToParticipant.set(socket.id, participantId);
-    
+
     // Activate session
     session.isActive = true;
 
@@ -861,9 +864,9 @@ io.on('connection', (socket) => {
   // ВАЖНОЕ ИЗМЕНЕНИЕ: теперь принимаем participantId из данных
   socket.on('ticket:status:update', async (data) => {
     console.log(`🔧 DEBUG: Received ticket:status:update for ticket ${data.ticketId}, status ${data.newStatus} from socket ${socket.id}`);
-    
+
     const { ticketId, newStatus, participantId } = data;
-    
+
     if (!participantId) {
       console.error('❌ No participantId in ticket:status:update');
       return;
@@ -897,7 +900,7 @@ io.on('connection', (socket) => {
     // Обновляем статус
     const oldStatus = ticket.status;
     ticket.status = newStatus;
-    
+
     if (newStatus === 'in Progress') {
       ticket.assignedTo = 'participant';
       ticket.assignedAt = Date.now();
@@ -939,7 +942,7 @@ io.on('connection', (socket) => {
 
   socket.on('ticket:solve', async (data) => {
     console.log(`🔧 DEBUG: Received ticket:solve for ticket ${data.ticketId} from socket ${socket.id}`);
-    
+
     const session = getSessionBySocket(socket.id);
     if (!session) {
       console.error('❌ No session found for socket:', socket.id);
@@ -1043,7 +1046,7 @@ io.on('connection', (socket) => {
 
   socket.on('ai:ask', ({ ticketId }) => {
     console.log(`🔧 DEBUG: Received ai:ask for ticket ${ticketId} from socket ${socket.id}`);
-    
+
     const session = getSessionBySocket(socket.id);
     if (!session) {
       console.error('❌ No session found for socket:', socket.id);
@@ -1082,7 +1085,7 @@ io.on('connection', (socket) => {
 
     // Отправляем ответ обратно на тот же сокет
     socket.emit('ai:response', { ticketId, text: responseText, kbId: foundKbId });
-    
+
     // Также отправляем уведомление другим сокетам в сессии
     session.socketConnections.forEach(socketId => {
       const sock = io.sockets.sockets.get(socketId);
@@ -1107,7 +1110,7 @@ io.on('connection', (socket) => {
 
   socket.on('bot:delegate', async ({ ticketId, botId }) => {
     console.log(`🔧 DEBUG: Received bot:delegate for ticket ${ticketId}, bot ${botId} from socket ${socket.id}`);
-    
+
     const session = getSessionBySocket(socket.id);
     if (!session) {
       console.error('❌ No session found for socket:', socket.id);
@@ -1117,10 +1120,10 @@ io.on('connection', (socket) => {
     // Delegation available only at stage 2 for odd participants
     if (session.currentStage !== 2 || session.participantParity !== 'odd') {
       console.log(`⚠️ Delegation not available: stage=${session.currentStage}, parity=${session.participantParity}`);
-      socket.emit('bot:notification', { 
-        botName: 'System', 
-        message: "Delegation is only available in stage 2 for odd participants", 
-        type: 'error' 
+      socket.emit('bot:notification', {
+        botName: 'System',
+        message: "Delegation is only available in stage 2 for odd participants",
+        type: 'error'
       });
       return;
     }
@@ -1130,20 +1133,20 @@ io.on('connection', (socket) => {
 
     if (!ticket) {
       console.error(`❌ Ticket ${ticketId} not found`);
-      socket.emit('bot:notification', { 
-        botName: 'System', 
-        message: "Ticket not found", 
-        type: 'error' 
+      socket.emit('bot:notification', {
+        botName: 'System',
+        message: "Ticket not found",
+        type: 'error'
       });
       return;
     }
-    
+
     if (!agent) {
       console.error(`❌ Agent ${botId} not found`);
-      socket.emit('bot:notification', { 
-        botName: 'System', 
-        message: "Colleague not found", 
-        type: 'error' 
+      socket.emit('bot:notification', {
+        botName: 'System',
+        message: "Colleague not found",
+        type: 'error'
       });
       return;
     }
@@ -1151,10 +1154,10 @@ io.on('connection', (socket) => {
     // Проверяем, назначен ли тикет участнику (статус 'in Progress' и assignedTo === 'participant')
     if (ticket.status !== 'in Progress' || ticket.assignedTo !== 'participant') {
       console.error(`❌ Ticket ${ticketId} not assigned to participant (status: ${ticket.status}, assignee: ${ticket.assignedTo})`);
-      socket.emit('bot:notification', { 
-        botName: 'System', 
-        message: "You must assign the ticket to yourself first (status 'In Progress')", 
-        type: 'error' 
+      socket.emit('bot:notification', {
+        botName: 'System',
+        message: "You must assign the ticket to yourself first (status 'In Progress')",
+        type: 'error'
       });
       return;
     }
@@ -1162,10 +1165,10 @@ io.on('connection', (socket) => {
     // Проверяем статус бота
     if (agent.status !== 'online') {
       console.log(`⚠️ Agent ${botId} is ${agent.status}, cannot delegate`);
-      socket.emit('bot:notification', { 
-        botName: agent.name, 
-        message: `is ${agent.status === 'away' ? 'away (not at the workplace)' : 'offline'}. Cannot delegate ticket.`, 
-        type: 'warning' 
+      socket.emit('bot:notification', {
+        botName: agent.name,
+        message: `is ${agent.status === 'away' ? 'away (not at the workplace)' : 'offline'}. Cannot delegate ticket.`,
+        type: 'warning'
       });
       return;
     }
@@ -1185,14 +1188,14 @@ io.on('connection', (socket) => {
     // Проверяем, поможет ли бот (на основе trust уровня)
     if (Math.random() > agent.trust) {
       console.log(`❌ Agent ${agent.name} refused to help (trust: ${agent.trust})`);
-      
+
       setTimeout(() => {
         const isIgnore = Math.random() > 0.5;
         if (isIgnore) {
-          socket.emit('bot:notification', { 
-            botName: agent.name, 
-            message: "read the request, but didn't respond.", 
-            type: 'warning' 
+          socket.emit('bot:notification', {
+            botName: agent.name,
+            message: "read the request, but didn't respond.",
+            type: 'warning'
           });
           writeLog('BOT_IGNORE', agent.name, {
             ticketId,
@@ -1201,10 +1204,10 @@ io.on('connection', (socket) => {
             parity: session.participantParity
           });
         } else {
-          socket.emit('bot:notification', { 
-            botName: agent.name, 
-            message: "refused: «I'm busy with other tasks»", 
-            type: 'error' 
+          socket.emit('bot:notification', {
+            botName: agent.name,
+            message: "refused: «I'm busy with other tasks»",
+            type: 'error'
           });
           writeLog('BOT_REFUSAL', agent.name, {
             ticketId,
@@ -1232,10 +1235,10 @@ io.on('connection', (socket) => {
     io.to(session.participantId).emit('tickets:update', session.tickets);
 
     // Отправляем уведомление о принятии задачи
-    socket.emit('bot:notification', { 
-      botName: agent.name, 
-      message: "accepted the task and started working...", 
-      type: 'info' 
+    socket.emit('bot:notification', {
+      botName: agent.name,
+      message: "accepted the task and started working...",
+      type: 'info'
     });
 
     await writeLog('BOT_ACCEPT', agent.name, {
@@ -1248,14 +1251,14 @@ io.on('connection', (socket) => {
     console.log(`⏳ Agent ${agent.name} started working on ticket ${ticketId}`);
 
     // Имитируем время решения задачи ботом
-    const solveTime = ticket.isCritical ? 
-      (5000 + Math.random() * 5000) : 
+    const solveTime = ticket.isCritical ?
+      (5000 + Math.random() * 5000) :
       (10000 + Math.random() * 10000);
 
     setTimeout(async () => {
       if (ticket.assignedTo === agent.name && ticket.status === 'in Progress') {
         console.log(`✅ Agent ${agent.name} solved ticket ${ticketId}`);
-        
+
         ticket.status = 'solved';
         ticket.solution = ticket.isCritical
           ? `🚨 CRITICAL TICKET RESOLVED by ${agent.name}: Emergency server restart performed, services restored. Root cause: hardware failure in power supply unit.`
@@ -1275,7 +1278,7 @@ io.on('connection', (socket) => {
 
         // Отправляем обновление всем клиентам через комнату
         io.to(session.participantId).emit('tickets:update', session.tickets);
-        
+
         // Уведомление инициатору
         socket.emit('bot:notification', {
           botName: agent.name,
@@ -1309,7 +1312,7 @@ io.on('connection', (socket) => {
   // Новый обработчик завершения туториала
   socket.on('tutorial:completed', async (data) => {
     console.log('📝 Tutorial completed event received:', data);
-    
+
     const session = getSessionBySocket(socket.id);
     if (!session) {
       console.error('❌ No session found for socket:', socket.id);
@@ -1317,24 +1320,24 @@ io.on('connection', (socket) => {
     }
 
     console.log(`📈 Updating session ${session.participantId} from stage ${session.currentStage} to stage 2`);
-    
+
     // Обновляем стадию сессии на 2
     session.currentStage = 2;
-    
+
     // Останавливаем спавн тикетов для туториала
     stopTicketSpawningForSession(session);
-    
+
     // Останавливаем проверку дедлайнов для туториала
     stopDeadlineCheckForSession(session);
-    
+
     // Фильтруем только tutorial тикеты для удаления
     session.tickets = session.tickets.filter(ticket => !ticket.isTutorial);
-    
+
     // Сбрасываем агентов в базовое состояние
     session.agents = JSON.parse(JSON.stringify(baseAgents));
-    
+
     console.log(`✅ Tutorial completed for ${session.participantId}, ready for stage 2`);
-    
+
     // Отправляем подтверждение клиенту
     socket.emit('tutorial:completed:ack', {
       success: true,
@@ -1351,7 +1354,7 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     console.log(`🔌 Socket ${socket.id} disconnected`);
-    
+
     // Find and remove socket from session
     const participantId = socketToParticipant.get(socket.id);
     if (participantId) {
@@ -1359,12 +1362,12 @@ io.on('connection', (socket) => {
       if (session) {
         session.socketConnections.delete(socket.id);
         console.log(`🔌 Socket ${socket.id} disconnected from session ${participantId}. Remaining connections: ${session.socketConnections.size}`);
-        
+
         // Если нет подключенных клиентов, деактивируем сессию
         if (session.socketConnections.size === 0) {
           session.isActive = false;
           console.log(`💤 Session ${participantId} is now inactive (no clients connected)`);
-          
+
           // Останавливаем все интервалы для этой сессии
           stopTicketSpawningForSession(session);
           stopBotLifecycleForSession(session);
@@ -1502,7 +1505,7 @@ app.post('/admin/change-ai-mode', async (req, res) => {
 
   // Сохраняем предыдущее состояние тикетов
   const previousTickets = [...session.tickets];
-  
+
   session.currentAiMode = aiMode;
 
   // НЕ очищаем тикеты при смене режима ИИ
@@ -1550,7 +1553,7 @@ app.post('/admin/start', async (req, res) => {
     if (session.tickets.length === 0) {
       session.tickets = [];
     }
-    
+
     session.agents.forEach(a => a.status = 'offline');
     console.log(`🎮 Starting tutorial for ${participantId}`);
 
@@ -1562,7 +1565,7 @@ app.post('/admin/start', async (req, res) => {
         }, i * 1500);
       }
     }
-    
+
     // Запускаем проверку дедлайнов для туториала (без дедлайнов, но для уведомлений)
     startDeadlineCheckForSession(session);
   }
@@ -1588,10 +1591,10 @@ app.post('/admin/start', async (req, res) => {
 
     // Start automatic ticket spawning for stage 2
     startTicketSpawningForSession(session);
-    
+
     // Start stage timer
     startStageTimerForSession(session);
-    
+
     // Start deadline check
     startDeadlineCheckForSession(session);
 

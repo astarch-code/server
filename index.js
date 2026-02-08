@@ -148,15 +148,35 @@ const pool = new Pool({
 // Initialize database tables including participants table
 async function initDatabase() {
   try {
-    // Create participants table FIRST (this is critical)
+    // Drop and recreate participants table with trigger
     await pool.query(`
-      CREATE TABLE IF NOT EXISTS participants (
+      DROP TABLE IF EXISTS participants;
+      CREATE TABLE participants (
         id SERIAL PRIMARY KEY,
         participant_uuid VARCHAR(100) UNIQUE NOT NULL,
-        parity VARCHAR(10) NOT NULL CHECK (parity IN ('odd', 'even')),
+        parity VARCHAR(10) NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
+    `);
+
+    // Create trigger function
+    await pool.query(`
+      CREATE OR REPLACE FUNCTION calculate_parity()
+      RETURNS TRIGGER AS $$
+      BEGIN
+          NEW.parity := CASE WHEN (NEW.id % 2) = 1 THEN 'odd' ELSE 'even' END;
+          RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+    `);
+
+    // Create trigger
+    await pool.query(`
+      CREATE TRIGGER set_participant_parity
+      BEFORE INSERT ON participants
+      FOR EACH ROW
+      EXECUTE FUNCTION calculate_parity();
     `);
 
     // Create survey responses table
@@ -186,7 +206,7 @@ async function initDatabase() {
       )
     `);
 
-    console.log('✅ Database tables initialized successfully');
+    console.log('✅ Database tables initialized successfully with parity trigger');
   } catch (error) {
     console.error('❌ Error initializing database:', error);
   }
@@ -202,80 +222,65 @@ initDatabase();
  * @returns {Object} { participantId, parity }
  */
 async function getOrCreateParticipant(participantUuid = null) {
-  const client = await pool.connect();
-  
   try {
-    await client.query('BEGIN');
-    
     if (participantUuid) {
       // Try to retrieve existing participant
-      const result = await client.query(
+      const result = await pool.query(
         'SELECT participant_uuid, parity FROM participants WHERE participant_uuid = $1',
         [participantUuid]
       );
-      
+
       if (result.rows.length > 0) {
         const participant = result.rows[0];
         // Update last_seen timestamp
-        await client.query(
+        await pool.query(
           'UPDATE participants SET last_seen_at = CURRENT_TIMESTAMP WHERE participant_uuid = $1',
           [participantUuid]
         );
-        
-        await client.query('COMMIT');
+
         return {
           participantId: participant.participant_uuid,
           parity: participant.parity,
           isNew: false
         };
       }
-      // If participant not found, continue to create new one
     }
-    
+
     // Create new participant
     const newUuid = participantUuid || uuidv4();
-    
-    // This is the CRITICAL part: let PostgreSQL assign ID atomically
-    const result = await client.query(`
-      INSERT INTO participants (participant_uuid, parity)
-      VALUES ($1, 
-        CASE 
-          WHEN (nextval('participants_id_seq') % 2) = 1 THEN 'odd'
-          ELSE 'even'
-        END
-      )
-      RETURNING participant_uuid, parity
+
+    const result = await pool.query(`
+      INSERT INTO participants (participant_uuid)
+      VALUES ($1)
+      RETURNING participant_uuid, parity, id
     `, [newUuid]);
-    
+
     const participant = result.rows[0];
-    
-    await client.query('COMMIT');
-    
-    console.log(`🆕 Created new participant: ${participant.participant_uuid} (${participant.parity})`);
-    
+
+    console.log(`🆕 Created new participant: ${participant.participant_uuid} (ID: ${participant.id}, ${participant.parity})`);
+
     return {
       participantId: participant.participant_uuid,
       parity: participant.parity,
       isNew: true
     };
-    
+
   } catch (error) {
-    await client.query('ROLLBACK');
-    
     // Handle unique constraint violation (race condition)
     if (error.code === '23505') { // unique_violation
       console.log(`⚠️ Participant UUID already exists, retrying: ${participantUuid}`);
       // Try to get the existing participant
-      return getOrCreateParticipant(participantUuid);
+      if (participantUuid) {
+        return getOrCreateParticipant(participantUuid);
+      }
+      // If no UUID provided, generate a new one
+      return getOrCreateParticipant(uuidv4());
     }
-    
+
     console.error('❌ Error in getOrCreateParticipant:', error);
     throw error;
-  } finally {
-    client.release();
   }
 }
-
 /**
  * Get participant by UUID
  * @param {string} participantUuid
@@ -287,7 +292,7 @@ async function getParticipant(participantUuid) {
       'SELECT participant_uuid, parity FROM participants WHERE participant_uuid = $1',
       [participantUuid]
     );
-    
+
     if (result.rows.length > 0) {
       const participant = result.rows[0];
       // Update last_seen timestamp
@@ -950,23 +955,23 @@ const getClientReaction = (isSuccess) => {
 app.post('/api/participant', async (req, res) => {
   try {
     const { participantId } = req.body;
-    
+
     console.log(`📝 Participant request: ${participantId ? 'existing' : 'new'}`);
-    
+
     const result = await getOrCreateParticipant(participantId);
-    
+
     res.json({
       success: true,
       participantId: result.participantId,
       parity: result.parity,
       isNew: result.isNew
     });
-    
+
   } catch (error) {
     console.error('❌ Error in /api/participant:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to process participant request' 
+    res.status(500).json({
+      success: false,
+      error: 'Failed to process participant request'
     });
   }
 });
@@ -975,9 +980,9 @@ app.post('/api/participant', async (req, res) => {
 app.get('/api/participant/:participantId', async (req, res) => {
   try {
     const { participantId } = req.params;
-    
+
     const participant = await getParticipant(participantId);
-    
+
     if (participant) {
       res.json({
         success: true,
@@ -992,9 +997,9 @@ app.get('/api/participant/:participantId', async (req, res) => {
     }
   } catch (error) {
     console.error('❌ Error getting participant:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to get participant' 
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get participant'
     });
   }
 });
@@ -1902,14 +1907,14 @@ app.get('/debug', async (req, res) => {
 // Health check endpoint for Render
 app.get('/health', async (req, res) => {
   let dbStatus = 'unknown';
-  
+
   try {
     const result = await pool.query('SELECT 1 as test');
     dbStatus = 'connected';
   } catch (error) {
     dbStatus = 'error';
   }
-  
+
   res.status(200).json({
     status: 'OK',
     timestamp: new Date().toISOString(),

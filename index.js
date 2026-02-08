@@ -431,6 +431,12 @@ const cleanupSession = (participantId) => {
 
 // --- TIMER FUNCTIONS ---
 const startStageTimerForSession = (session) => {
+  // Если таймер уже работает, не запускаем новый
+  if (session.stageTimerInterval) {
+    console.log(`⚠️ Timer already running for session ${session.participantId}, skipping restart`);
+    return;
+  }
+
   // Очищаем предыдущий интервал, если он был
   if (session.stageTimerInterval) {
     clearInterval(session.stageTimerInterval);
@@ -439,6 +445,12 @@ const startStageTimerForSession = (session) => {
 
   if (session.currentStage === 2 && session.stageStartTime && session.stageDuration) {
     console.log(`⏱️ Starting stage timer for session ${session.participantId}`);
+    
+    // Отправляем начальное значение времени
+    const initialTimeElapsed = Date.now() - session.stageStartTime;
+    const initialTimeLeftMs = Math.max(0, session.stageDuration - initialTimeElapsed);
+    const initialTimeLeftSec = Math.floor(initialTimeLeftMs / 1000);
+    io.to(session.participantId).emit('shift:timer:update', { timeLeft: initialTimeLeftSec });
 
     session.stageTimerInterval = setInterval(() => {
       const timeElapsed = Date.now() - session.stageStartTime;
@@ -1691,6 +1703,15 @@ app.post('/admin/change-ai-mode', async (req, res) => {
     return res.status(403).json({ error: 'AI mode can only be changed by even participants during experiment stage' });
   }
 
+  // --- ВАЖНО: Сохраняем состояние таймера перед сменой режима ---
+  const previousAiMode = session.currentAiMode;
+  const stageStartTime = session.stageStartTime;
+  const stageDuration = session.stageDuration;
+  const stageTimerInterval = session.stageTimerInterval;
+  const deadlineCheckInterval = session.deadlineCheckInterval;
+  const spawnInterval = session.spawnInterval;
+  const botCheckInterval = session.botCheckInterval;
+
   // Сохраняем предыдущее состояние тикетов
   const previousTickets = [...session.tickets];
 
@@ -1704,15 +1725,37 @@ app.post('/admin/change-ai-mode', async (req, res) => {
   io.to(participantId).emit('ai:mode_changed', { aiMode: session.currentAiMode });
   io.to(participantId).emit('tickets:update', session.tickets);
 
+  // Если таймер был активен, отправляем текущее время
+  if (session.currentStage === 2 && session.stageStartTime && session.stageDuration) {
+    const timeElapsed = Date.now() - session.stageStartTime;
+    const timeLeftMs = Math.max(0, session.stageDuration - timeElapsed);
+    const timeLeftSec = Math.floor(timeLeftMs / 1000);
+
+    // Отправляем актуальное время таймера
+    io.to(participantId).emit('shift:timer:update', { timeLeft: timeLeftSec });
+
+    // Перезапускаем таймер, если он был остановлен
+    if (!session.stageTimerInterval) {
+      startStageTimerForSession(session);
+    }
+  }
+
   await writeLog('AI_MODE_CHANGED', 'ADMIN', {
     participantId,
     aiMode: session.currentAiMode,
     stage: session.currentStage,
     parity: parity,
-    ticketsCount: session.tickets.length
+    ticketsCount: session.tickets.length,
+    previousAiMode: previousAiMode,
+    timeRemaining: session.stageStartTime ? Math.floor((session.stageDuration - (Date.now() - session.stageStartTime)) / 1000) : 0
   });
 
-  res.json({ success: true, aiMode: session.currentAiMode, ticketsCount: session.tickets.length });
+  res.json({
+    success: true,
+    aiMode: session.currentAiMode,
+    ticketsCount: session.tickets.length,
+    timeRemaining: session.stageStartTime ? Math.floor((session.stageDuration - (Date.now() - session.stageStartTime)) / 1000) : 0
+  });
 });
 
 app.post('/admin/start', async (req, res) => {
@@ -1774,17 +1817,28 @@ app.post('/admin/start', async (req, res) => {
     }
 
     // Set stage start time and duration for critical ticket timing
-    session.stageStartTime = Date.now();
-    session.stageDuration = SHIFT_DURATION_MS;
+    // ВАЖНО: Не перезаписываем, если уже установлено!
+    if (!session.stageStartTime) {
+      session.stageStartTime = Date.now();
+    }
+    if (!session.stageDuration) {
+      session.stageDuration = SHIFT_DURATION_MS;
+    }
 
     // Start automatic ticket spawning for stage 2
-    startTicketSpawningForSession(session);
+    if (!session.spawnInterval) {
+      startTicketSpawningForSession(session);
+    }
 
     // Start stage timer
-    startStageTimerForSession(session);
+    if (!session.stageTimerInterval) {
+      startStageTimerForSession(session);
+    }
 
     // Start deadline check
-    startDeadlineCheckForSession(session);
+    if (!session.deadlineCheckInterval) {
+      startDeadlineCheckForSession(session);
+    }
 
     await writeLog('STAGE_2_STARTED', 'System', {
       participantId,

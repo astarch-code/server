@@ -221,9 +221,9 @@ const getOrCreateSession = (participantId, participantParity) => {
       spawnInterval: null,
       botCheckInterval: null,
       stageTimerInterval: null,
-      deadlineCheckInterval: null, // NEW: для проверки дедлайнов
+      deadlineCheckInterval: null,
       socketConnections: new Set(), // Store socket IDs connected to this session
-      isActive: false // NEW: флаг активности сессии
+      isActive: false
     };
 
     sessions.set(participantId, newSession);
@@ -233,10 +233,10 @@ const getOrCreateSession = (participantId, participantParity) => {
   return sessions.get(participantId);
 };
 
-const getSessionBySocket = (socketId) => {
-  const participantId = socketToParticipant.get(socketId);
+// ВАЖНОЕ ИЗМЕНЕНИЕ: Теперь всегда ищем сессию по participantId, а не по socket.id
+const getSessionByParticipantId = (participantId) => {
   if (!participantId) {
-    console.log(`❌ No participantId found for socket: ${socketId}`);
+    console.log('❌ No participantId provided');
     return null;
   }
   
@@ -247,6 +247,17 @@ const getSessionBySocket = (socketId) => {
   }
   
   return session;
+};
+
+// Старая функция для обратной совместимости
+const getSessionBySocket = (socketId) => {
+  const participantId = socketToParticipant.get(socketId);
+  if (!participantId) {
+    console.log(`❌ No participantId found for socket: ${socketId}`);
+    return null;
+  }
+  
+  return getSessionByParticipantId(participantId);
 };
 
 const cleanupSession = (participantId) => {
@@ -304,13 +315,8 @@ const startStageTimerForSession = (session) => {
       const timeLeftMs = Math.max(0, session.stageDuration - timeElapsed);
       const timeLeftSec = Math.floor(timeLeftMs / 1000);
 
-      // Отправляем обновление времени всем клиентам в сессии
-      session.socketConnections.forEach(socketId => {
-        const socket = io.sockets.sockets.get(socketId);
-        if (socket) {
-          socket.emit('shift:timer:update', { timeLeft: timeLeftSec });
-        }
-      });
+      // Отправляем обновление времени всем клиентам в сессии через комнату
+      io.to(session.participantId).emit('shift:timer:update', { timeLeft: timeLeftSec });
 
       // Если время вышло, завершаем смену
       if (timeLeftMs <= 0) {
@@ -318,14 +324,9 @@ const startStageTimerForSession = (session) => {
         session.stageTimerInterval = null;
 
         // Отправляем событие о завершении времени
-        session.socketConnections.forEach(socketId => {
-          const socket = io.sockets.sockets.get(socketId);
-          if (socket) {
-            socket.emit('shift:timeout');
-          }
-        });
+        io.to(session.participantId).emit('shift:timeout');
       }
-    }, 1000); // Обновляем каждую секунду
+    }, 1000);
   }
 };
 
@@ -364,16 +365,11 @@ const startDeadlineCheckForSession = (session) => {
         ticket.assignOverdueReported = true;
         changed = true;
 
-        session.socketConnections.forEach(socketId => {
-          const socket = io.sockets.sockets.get(socketId);
-          if (socket) {
-            socket.emit('client:notification', {
-              type: 'warning',
-              message: ticket.isCritical
-                ? '🚨 CRITICAL TICKET OVERDUE: Server still down! Immediate assignment required!'
-                : 'You took too long to assign the request!'
-            });
-          }
+        io.to(session.participantId).emit('client:notification', {
+          type: 'warning',
+          message: ticket.isCritical
+            ? '🚨 CRITICAL TICKET OVERDUE: Server still down! Immediate assignment required!'
+            : 'You took too long to assign the request!'
         });
       }
 
@@ -396,29 +392,19 @@ const startDeadlineCheckForSession = (session) => {
 
         changed = true;
 
-        session.socketConnections.forEach(socketId => {
-          const socket = io.sockets.sockets.get(socketId);
-          if (socket) {
-            socket.emit('client:notification', {
-              type: 'warning',
-              message: ticket.isCritical
-                ? '🚨 CRITICAL TICKET SOLUTION OVERDUE: Business operations affected!'
-                : 'Solution took too long. Client is dissatisfied!'
-            });
-          }
+        io.to(session.participantId).emit('client:notification', {
+          type: 'warning',
+          message: ticket.isCritical
+            ? '🚨 CRITICAL TICKET SOLUTION OVERDUE: Business operations affected!'
+            : 'Solution took too long. Client is dissatisfied!'
         });
       }
     });
 
     if (changed) {
-      session.socketConnections.forEach(socketId => {
-        const socket = io.sockets.sockets.get(socketId);
-        if (socket) {
-          socket.emit('tickets:update', session.tickets);
-        }
-      });
+      io.to(session.participantId).emit('tickets:update', session.tickets);
     }
-  }, 5000); // Check every 5 seconds
+  }, 5000);
 };
 
 const stopDeadlineCheckForSession = (session) => {
@@ -504,25 +490,15 @@ const spawnTicketForSession = async (session, isCritical = false, tutorialTicket
   session.tickets.push(newTicket);
   console.log(`📊 Ticket added to session ${session.participantId}. Total tickets: ${session.tickets.length}`);
 
-  // Emit to all sockets connected to this session
-  session.socketConnections.forEach(socketId => {
-    const socket = io.sockets.sockets.get(socketId);
-    if (socket) {
-      socket.emit('ticket:new', newTicket);
-    }
-  });
+  // Emit to all sockets in this session using room
+  io.to(session.participantId).emit('ticket:new', newTicket);
 
   // Для критических тикетов сразу отправляем специальное уведомление
   if (isCritical && !tutorialTicket) {
     console.log(`🚨 Sending critical notification for ticket: ${newTicket.id}`);
-    session.socketConnections.forEach(socketId => {
-      const socket = io.sockets.sockets.get(socketId);
-      if (socket) {
-        socket.emit('client:notification', {
-          type: 'critical',
-          message: '🚨 CRITICAL TICKET: Server Down! Immediate action required! Business impact!'
-        });
-      }
+    io.to(session.participantId).emit('client:notification', {
+      type: 'critical',
+      message: '🚨 CRITICAL TICKET: Server Down! Immediate action required! Business impact!'
     });
   }
 
@@ -547,15 +523,10 @@ const spawnTicketForSession = async (session, isCritical = false, tutorialTicket
   // Ticket notifications only at stage 2 for even participants in normal mode
   if (session.currentStage === 2 && session.participantParity === 'even' && session.currentAiMode === 'normal' && !tutorialTicket) {
     setTimeout(() => {
-      session.socketConnections.forEach(socketId => {
-        const socket = io.sockets.sockets.get(socketId);
-        if (socket) {
-          socket.emit('ai:notification', {
-            type: 'new_ticket',
-            message: `🚨 New ${isCritical ? 'CRITICAL ' : ''}ticket: ${newTicket.title}`,
-            isCritical: isCritical
-          });
-        }
+      io.to(session.participantId).emit('ai:notification', {
+        type: 'new_ticket',
+        message: `🚨 New ${isCritical ? 'CRITICAL ' : ''}ticket: ${newTicket.title}`,
+        isCritical: isCritical
       });
     }, 2000);
   }
@@ -576,15 +547,10 @@ const handleAutonomousAIForSession = async (session, ticket) => {
       isCritical: ticket.isCritical
     });
 
-    session.socketConnections.forEach(socketId => {
-      const socket = io.sockets.sockets.get(socketId);
-      if (socket) {
-        socket.emit('ai:autonomous_action', {
-          type: 'missed',
-          ticketId: ticket.id,
-          message: `AI missed ${ticket.isCritical ? 'CRITICAL ' : ''}ticket`
-        });
-      }
+    io.to(session.participantId).emit('ai:autonomous_action', {
+      type: 'missed',
+      ticketId: ticket.id,
+      message: `AI missed ${ticket.isCritical ? 'CRITICAL ' : ''}ticket`
     });
 
     return;
@@ -592,7 +558,7 @@ const handleAutonomousAIForSession = async (session, ticket) => {
 
   ticket.status = 'in Progress';
   ticket.assignedTo = 'AI';
-  ticket.deadlineSolve = Date.now() + (ticket.isCritical ? 120000 : 300000); // Критические: 2 минуты, обычные: 5 минут
+  ticket.deadlineSolve = Date.now() + (ticket.isCritical ? 120000 : 300000);
   ticket.messages = ticket.messages || [];
   ticket.messages.push({
     from: 'AI',
@@ -608,17 +574,12 @@ const handleAutonomousAIForSession = async (session, ticket) => {
     isCritical: ticket.isCritical
   });
 
-  session.socketConnections.forEach(socketId => {
-    const socket = io.sockets.sockets.get(socketId);
-    if (socket) {
-      socket.emit('ai:autonomous_action', {
-        type: 'taken',
-        ticketId: ticket.id,
-        message: `AI took ${ticket.isCritical ? '🚨 CRITICAL ' : ''}ticket #${ticket.id.slice(0, 5)} to work`
-      });
-      socket.emit('tickets:update', session.tickets);
-    }
+  io.to(session.participantId).emit('ai:autonomous_action', {
+    type: 'taken',
+    ticketId: ticket.id,
+    message: `AI took ${ticket.isCritical ? '🚨 CRITICAL ' : ''}ticket #${ticket.id.slice(0, 5)} to work`
   });
+  io.to(session.participantId).emit('tickets:update', session.tickets);
 
   const solveTime = ticket.isCritical ? 2000 + Math.random() * 3000 : 3000 + Math.random() * 5000;
   setTimeout(async () => {
@@ -644,15 +605,10 @@ const handleAutonomousAIForSession = async (session, ticket) => {
           isCritical: ticket.isCritical
         });
 
-        session.socketConnections.forEach(socketId => {
-          const socket = io.sockets.sockets.get(socketId);
-          if (socket) {
-            socket.emit('ai:autonomous_action', {
-              type: 'failed',
-              ticketId: ticket.id,
-              message: `AI failed to solve ${ticket.isCritical ? '🚨 CRITICAL ' : ''}ticket #${ticket.id.slice(0, 5)}`
-            });
-          }
+        io.to(session.participantId).emit('ai:autonomous_action', {
+          type: 'failed',
+          ticketId: ticket.id,
+          message: `AI failed to solve ${ticket.isCritical ? '🚨 CRITICAL ' : ''}ticket #${ticket.id.slice(0, 5)}`
         });
       } else {
         ticket.status = 'solved';
@@ -688,12 +644,7 @@ const handleAutonomousAIForSession = async (session, ticket) => {
             timestamp: Date.now() + 100
           });
 
-          session.socketConnections.forEach(socketId => {
-            const socket = io.sockets.sockets.get(socketId);
-            if (socket) {
-              socket.emit('tickets:update', session.tickets);
-            }
-          });
+          io.to(session.participantId).emit('tickets:update', session.tickets);
         }, 1000);
 
         await writeLog('AI_SOLVED_TICKET', 'AI', {
@@ -705,24 +656,14 @@ const handleAutonomousAIForSession = async (session, ticket) => {
           isCritical: ticket.isCritical
         });
 
-        session.socketConnections.forEach(socketId => {
-          const socket = io.sockets.sockets.get(socketId);
-          if (socket) {
-            socket.emit('ai:autonomous_action', {
-              type: 'solved',
-              ticketId: ticket.id,
-              message: `AI successfully solved ${ticket.isCritical ? '🚨 CRITICAL ' : ''}ticket #${ticket.id.slice(0, 5)}`
-            });
-          }
+        io.to(session.participantId).emit('ai:autonomous_action', {
+          type: 'solved',
+          ticketId: ticket.id,
+          message: `AI successfully solved ${ticket.isCritical ? '🚨 CRITICAL ' : ''}ticket #${ticket.id.slice(0, 5)}`
         });
       }
 
-      session.socketConnections.forEach(socketId => {
-        const socket = io.sockets.sockets.get(socketId);
-        if (socket) {
-          socket.emit('tickets:update', session.tickets);
-        }
-      });
+      io.to(session.participantId).emit('tickets:update', session.tickets);
     }
   }, solveTime);
 };
@@ -773,7 +714,7 @@ const startTicketSpawningForSession = (session) => {
       } catch (error) {
         console.error('Error in ticket spawning interval:', error);
       }
-    }, 8000); // Каждые 8 секунд
+    }, 8000);
 
     console.log(`✅ Ticket spawning interval started for ${session.participantId} (every 8s)`);
   }
@@ -837,12 +778,7 @@ const startBotLifecycleForSession = (session) => {
       });
 
       if (changed) {
-        session.socketConnections.forEach(socketId => {
-          const socket = io.sockets.sockets.get(socketId);
-          if (socket) {
-            socket.emit('agents:update', session.agents);
-          }
-        });
+        io.to(session.participantId).emit('agents:update', session.agents);
       }
     }, BOT_LIFECYCLE_CONFIG.checkInterval);
   }
@@ -886,6 +822,7 @@ const getClientReaction = (isSuccess) => {
 io.on('connection', (socket) => {
   console.log('✅ New client connected:', socket.id);
 
+  // ВАЖНОЕ ИЗМЕНЕНИЕ: добавляем сокет в комнату по participantId
   socket.on('request:init', (data) => {
     console.log('📥 Received init request:', data);
 
@@ -905,6 +842,9 @@ io.on('connection', (socket) => {
     // Activate session
     session.isActive = true;
 
+    // ВАЖНО: добавляем сокет в комнату по participantId
+    socket.join(participantId);
+
     console.log(`🔗 Socket ${socket.id} connected to session ${participantId}. Total connections: ${session.socketConnections.size}`);
 
     // Send session data to the socket
@@ -918,12 +858,21 @@ io.on('connection', (socket) => {
     });
   });
 
-  socket.on('ticket:status:update', async ({ ticketId, newStatus }) => {
-    console.log(`🔧 DEBUG: Received ticket:status:update for ticket ${ticketId}, status ${newStatus} from socket ${socket.id}`);
+  // ВАЖНОЕ ИЗМЕНЕНИЕ: теперь принимаем participantId из данных
+  socket.on('ticket:status:update', async (data) => {
+    console.log(`🔧 DEBUG: Received ticket:status:update for ticket ${data.ticketId}, status ${data.newStatus} from socket ${socket.id}`);
     
-    const session = getSessionBySocket(socket.id);
+    const { ticketId, newStatus, participantId } = data;
+    
+    if (!participantId) {
+      console.error('❌ No participantId in ticket:status:update');
+      return;
+    }
+
+    // ВАЖНО: ищем сессию по participantId, а не по socket.id
+    const session = getSessionByParticipantId(participantId);
     if (!session) {
-      console.error('❌ No session found for socket:', socket.id);
+      console.error('❌ No session found for participant:', participantId);
       return;
     }
 
@@ -982,14 +931,8 @@ io.on('connection', (socket) => {
       }
     }
 
-    // Emit update to all sockets in this session
-    session.socketConnections.forEach(socketId => {
-      const sock = io.sockets.sockets.get(socketId);
-      if (sock) {
-        sock.emit('tickets:update', session.tickets);
-        console.log(`🔧 DEBUG: Sent tickets:update to socket ${socketId}`);
-      }
-    });
+    // Emit update to all sockets in this session using room
+    io.to(participantId).emit('tickets:update', session.tickets);
 
     console.log(`✅ DEBUG: Ticket ${ticketId} updated successfully from ${oldStatus} to ${newStatus}`);
   });
@@ -1031,12 +974,8 @@ io.on('connection', (socket) => {
       timestamp: Date.now()
     });
 
-    session.socketConnections.forEach(socketId => {
-      const sock = io.sockets.sockets.get(socketId);
-      if (sock) {
-        sock.emit('tickets:update', session.tickets);
-      }
-    });
+    // Используем комнату для отправки обновлений
+    io.to(session.participantId).emit('tickets:update', session.tickets);
 
     // For tutorial tickets, always show success
     if (t.isTutorial) {
@@ -1046,12 +985,7 @@ io.on('connection', (socket) => {
         timestamp: Date.now() + 100
       });
 
-      session.socketConnections.forEach(socketId => {
-        const sock = io.sockets.sockets.get(socketId);
-        if (sock) {
-          sock.emit('tickets:update', session.tickets);
-        }
-      });
+      io.to(session.participantId).emit('tickets:update', session.tickets);
 
       return;
     }
@@ -1080,18 +1014,13 @@ io.on('connection', (socket) => {
       });
 
       if (isSuccess) {
-        session.socketConnections.forEach(socketId => {
-          const sock = io.sockets.sockets.get(socketId);
-          if (sock) {
-            sock.emit('client:notification', {
-              type: 'success',
-              message: `Client confirmed solution for ${t.isCritical ? '🚨 CRITICAL ' : ''}ticket #${t.id.slice(0, 5)}`
-            });
-          }
+        io.to(session.participantId).emit('client:notification', {
+          type: 'success',
+          message: `Client confirmed solution for ${t.isCritical ? '🚨 CRITICAL ' : ''}ticket #${t.id.slice(0, 5)}`
         });
       } else {
         t.status = 'in Progress';
-        t.deadlineSolve = Date.now() + (t.isCritical ? 60000 : 120000); // Укороченный срок для повторного решения
+        t.deadlineSolve = Date.now() + (t.isCritical ? 60000 : 120000);
 
         t.messages.push({
           from: 'system',
@@ -1101,23 +1030,13 @@ io.on('connection', (socket) => {
           timestamp: Date.now() + 10
         });
 
-        session.socketConnections.forEach(socketId => {
-          const sock = io.sockets.sockets.get(socketId);
-          if (sock) {
-            sock.emit('client:notification', {
-              type: 'error',
-              message: `Error! ${t.isCritical ? '🚨 CRITICAL ' : ''}Ticket #${t.id.slice(0, 5)} returned to work.`
-            });
-          }
+        io.to(session.participantId).emit('client:notification', {
+          type: 'error',
+          message: `Error! ${t.isCritical ? '🚨 CRITICAL ' : ''}Ticket #${t.id.slice(0, 5)} returned to work.`
         });
       }
 
-      session.socketConnections.forEach(socketId => {
-        const sock = io.sockets.sockets.get(socketId);
-        if (sock) {
-          sock.emit('tickets:update', session.tickets);
-        }
-      });
+      io.to(session.participantId).emit('tickets:update', session.tickets);
 
     }, 1500);
   });
@@ -1164,7 +1083,7 @@ io.on('connection', (socket) => {
     // Отправляем ответ обратно на тот же сокет
     socket.emit('ai:response', { ticketId, text: responseText, kbId: foundKbId });
     
-    // Также отправляем уведомление всем клиентам в сессии
+    // Также отправляем уведомление другим сокетам в сессии
     session.socketConnections.forEach(socketId => {
       const sock = io.sockets.sockets.get(socketId);
       if (sock && sock.id !== socket.id) {
@@ -1309,13 +1228,8 @@ io.on('connection', (socket) => {
       timestamp: Date.now()
     });
 
-    // Отправляем обновление всем клиентам в сессии СРАЗУ
-    session.socketConnections.forEach(socketId => {
-      const sock = io.sockets.sockets.get(socketId);
-      if (sock) {
-        sock.emit('tickets:update', session.tickets);
-      }
-    });
+    // Отправляем обновление всем клиентам в сессии СРАЗУ через комнату
+    io.to(session.participantId).emit('tickets:update', session.tickets);
 
     // Отправляем уведомление о принятии задачи
     socket.emit('bot:notification', { 
@@ -1359,17 +1273,14 @@ io.on('connection', (socket) => {
           timestamp: Date.now()
         });
 
-        // Отправляем обновление всем клиентам
-        session.socketConnections.forEach(socketId => {
-          const sock = io.sockets.sockets.get(socketId);
-          if (sock) {
-            sock.emit('tickets:update', session.tickets);
-            sock.emit('bot:notification', {
-              botName: agent.name,
-              message: `successfully solved ${ticket.isCritical ? '🚨 CRITICAL ' : ''}ticket "${ticket.title.slice(0, 30)}..."`,
-              type: 'success'
-            });
-          }
+        // Отправляем обновление всем клиентам через комнату
+        io.to(session.participantId).emit('tickets:update', session.tickets);
+        
+        // Уведомление инициатору
+        socket.emit('bot:notification', {
+          botName: agent.name,
+          message: `successfully solved ${ticket.isCritical ? '🚨 CRITICAL ' : ''}ticket "${ticket.title.slice(0, 30)}..."`,
+          type: 'success'
         });
 
         await writeLog('BOT_SOLVE', agent.name, {
@@ -1389,12 +1300,7 @@ io.on('connection', (socket) => {
             timestamp: Date.now() + 100
           });
 
-          session.socketConnections.forEach(socketId => {
-            const sock = io.sockets.sockets.get(socketId);
-            if (sock) {
-              sock.emit('tickets:update', session.tickets);
-            }
-          });
+          io.to(session.participantId).emit('tickets:update', session.tickets);
         }, 1000);
       }
     }, solveTime);
@@ -1472,8 +1378,6 @@ io.on('connection', (socket) => {
     console.log(`❌ Client disconnected: ${socket.id}`);
   });
 });
-
-// УДАЛЕН глобальный интервал для проверки дедлайнов - теперь это делается на уровне сессии
 
 // Endpoint for pre-experiment survey questions
 app.get('/api/survey/pre-experiment', (req, res) => {
@@ -1605,15 +1509,9 @@ app.post('/admin/change-ai-mode', async (req, res) => {
   // Восстанавливаем тикеты (на случай, если они были потеряны)
   session.tickets = previousTickets;
 
-  // Broadcast the change to all connected clients in this session
-  session.socketConnections.forEach(socketId => {
-    const socket = io.sockets.sockets.get(socketId);
-    if (socket) {
-      socket.emit('ai:mode_changed', { aiMode: session.currentAiMode });
-      // Также отправляем обновление тикетов
-      socket.emit('tickets:update', session.tickets);
-    }
-  });
+  // Broadcast the change to all connected clients in this session using room
+  io.to(participantId).emit('ai:mode_changed', { aiMode: session.currentAiMode });
+  io.to(participantId).emit('tickets:update', session.tickets);
 
   await writeLog('AI_MODE_CHANGED', 'ADMIN', {
     participantId,
@@ -1661,7 +1559,7 @@ app.post('/admin/start', async (req, res) => {
       for (let i = 0; i < 3; i++) {
         setTimeout(async () => {
           await spawnTicketForSession(session, false, true);
-        }, i * 1500); // Stagger spawns by 1.5 seconds
+        }, i * 1500);
       }
     }
     
@@ -1705,19 +1603,14 @@ app.post('/admin/start', async (req, res) => {
     });
   }
 
-  // Send updated session data to all connected sockets
-  session.socketConnections.forEach(socketId => {
-    const socket = io.sockets.sockets.get(socketId);
-    if (socket) {
-      socket.emit('init', {
-        tickets: session.tickets,
-        kbArticles: kbArticles,
-        agents: session.agents,
-        currentStage: session.currentStage,
-        aiMode: session.currentAiMode,
-        participantParity: session.participantParity
-      });
-    }
+  // Send updated session data to all connected sockets using room
+  io.to(participantId).emit('init', {
+    tickets: session.tickets,
+    kbArticles: kbArticles,
+    agents: session.agents,
+    currentStage: session.currentStage,
+    aiMode: session.currentAiMode,
+    participantParity: session.participantParity
   });
 
   await writeLog('STAGE_START', 'ADMIN', {

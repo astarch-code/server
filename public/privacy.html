@@ -3,7 +3,138 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>P L A C E H O L D E R</title>
+    <title>Privacy & Contact – Experiment</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            line-height: 1.6;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 30px;
+            background: rgba(15, 23, 42, 0.9);
+            border-radius: 16px;
+            border: 1px solid rgba(148, 163, 184, 0.2);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid rgba(6, 182, 212, 0.4);
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            background: linear-gradient(90deg, #06b6d4 0%, #3b82f6 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #94a3b8;
+        }
+
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: rgba(30, 41, 59, 0.6);
+            border-radius: 12px;
+            border-left: 4px solid #06b6d4;
+        }
+
+        .section h2 {
+            font-size: 1.8rem;
+            color: #f1f5f9;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .contact-item {
+            margin: 15px 0;
+            padding: 10px 15px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            border: 1px solid rgba(148, 163, 184, 0.2);
+        }
+
+        .contact-item strong {
+            color: #06b6d4;
+            display: inline-block;
+            min-width: 100px;
+        }
+
+        a {
+            color: #3b82f6;
+            text-decoration: none;
+            border-bottom: 1px dotted #3b82f6;
+        }
+
+        a:hover {
+            color: #06b6d4;
+            border-bottom: 1px solid #06b6d4;
+        }
+
+        .footer-note {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(148, 163, 184, 0.2);
+            color: #94a3b8;
+            font-size: 0.9rem;
+        }
+    </style>
 </head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Privacy & Contact</h1>
+            <p>Information about data handling and how to reach us</p>
+        </div>
+
+        <div class="section">
+            <h2>📬 Contact</h2>
+            <div class="contact-item">
+                <strong>Email:</strong> <a href="mailto:email@domain.com">email@domain.com</a>
+            </div>
+            <p>If you have any questions about the experiment or your participation, feel free to write to this address. We usually respond within 2–3 business days.</p>
+        </div>
+
+        <div class="section">
+            <h2>⚙️ Technical hosting</h2>
+            <div class="contact-item">
+                <strong>Platform:</strong> <a href="https://render.com" target="_blank">render.com</a>
+            </div>
+            <p>This web application is powered by <strong>Render</strong>. All collected data (survey responses, ticket actions, participant IDs) is stored securely on servers provided by Render.</p>
+            <p>Render’s infrastructure is GDPR‑compliant and uses industry‑standard security measures. For more details about how Render handles data, please visit their privacy policy:</p>
+            <p style="margin-top: 10px;">🔗 <a href="https://render.com/privacy" target="_blank">https://render.com/privacy</a></p>
+        </div>
+
+        <div class="section">
+            <h2>🔐 Data usage</h2>
+            <p>All data collected during this experiment is used exclusively for scientific research. It is stored anonymously and will never be shared with third parties. Your participant ID is a random UUID that cannot be linked to your identity.</p>
+            <p>By proceeding with the experiment, you consent to the collection and storage of your anonymous data as described.</p>
+        </div>
+
+        <div class="footer-note">
+            <p>Experiment version 2.0 – Last updated February 2026</p>
+        </div>
+    </div>
 </body>
 </html>

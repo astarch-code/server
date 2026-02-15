@@ -324,6 +324,12 @@ const AUTONOMOUS_AI_CONFIG = {
   failProbability: 40
 };
 
+// Новые параметры для критических тикетов (итоговая вероятность решения = 5% * 20% = 1%)
+const AI_CRITICAL_MISS_PROB = 95;   // 95% пропуск
+const AI_CRITICAL_FAIL_PROB = 80;   // 80% неудача среди взятых
+
+const BOT_CRITICAL_FAIL_PROB = 99; // 99% неудачи при решении критического тикета
+
 const SHIFT_DURATION_MS = 600 * 1000; // 10 minutes in milliseconds
 
 const baseAgents = [
@@ -355,7 +361,8 @@ const getOrCreateSession = (participantId, participantParity) => {
       stageTimerInterval: null,
       deadlineCheckInterval: null,
       socketConnections: new Set(), // Store socket IDs connected to this session
-      isActive: false
+      isActive: false,
+      lastCriticalSpawnTime: 0   // <-- добавлено
     };
 
     sessions.set(participantId, newSession);
@@ -679,11 +686,15 @@ const spawnTicketForSession = async (session, isCritical = false, tutorialTicket
 const handleAutonomousAIForSession = async (session, ticket) => {
   if (ticket.status !== 'not assigned') return;
 
-  if (Math.random() * 100 < AUTONOMOUS_AI_CONFIG.missProbability) {
+  // Определяем вероятности в зависимости от критичности
+  const missProb = ticket.isCritical ? AI_CRITICAL_MISS_PROB : AUTONOMOUS_AI_CONFIG.missProbability;
+  const failProb = ticket.isCritical ? AI_CRITICAL_FAIL_PROB : AUTONOMOUS_AI_CONFIG.failProbability;
+
+  if (Math.random() * 100 < missProb) {
     await writeLog('AI_MISSED_TICKET', 'AI', {
       ticketId: ticket.id,
       participantId: session.participantId,
-      probability: AUTONOMOUS_AI_CONFIG.missProbability,
+      probability: missProb,
       stage: session.currentStage,
       parity: session.participantParity,
       isCritical: ticket.isCritical
@@ -726,7 +737,7 @@ const handleAutonomousAIForSession = async (session, ticket) => {
   const solveTime = ticket.isCritical ? 2000 + Math.random() * 3000 : 3000 + Math.random() * 5000;
   setTimeout(async () => {
     if (ticket.status === 'in Progress' && ticket.assignedTo === 'AI') {
-      const willFail = Math.random() * 100 < AUTONOMOUS_AI_CONFIG.failProbability;
+      const willFail = Math.random() * 100 < failProb;
 
       if (willFail) {
         ticket.status = 'not assigned';
@@ -741,7 +752,7 @@ const handleAutonomousAIForSession = async (session, ticket) => {
         await writeLog('AI_FAILED_TICKET', 'AI', {
           ticketId: ticket.id,
           participantId: session.participantId,
-          probability: AUTONOMOUS_AI_CONFIG.failProbability,
+          probability: failProb,
           stage: session.currentStage,
           parity: session.participantParity,
           isCritical: ticket.isCritical
@@ -830,28 +841,24 @@ const startTicketSpawningForSession = (session) => {
           return;
         }
 
-        console.log(`🎲 Checking to spawn ticket for ${session.participantId} (stage: ${session.currentStage}, parity: ${session.participantParity})`);
+        const now = Date.now();
+        const timeElapsed = now - session.stageStartTime;
+        const isSecondHalf = session.stageStartTime && session.stageDuration && timeElapsed > (session.stageDuration / 2);
+        const CRITICAL_COOLDOWN = 60000; // 60 секунд
 
-        // Проверяем условие для спауна тикета (30% вероятность)
-        if (Math.random() > 0.7) {
-          // Проверяем, прошла ли половина времени смены
-          const timeElapsed = Date.now() - session.stageStartTime;
-          const isSecondHalf = session.stageStartTime && session.stageDuration && timeElapsed > (session.stageDuration / 2);
-
-          console.log(`⏱️ Time elapsed for ${session.participantId}: ${timeElapsed}ms, isSecondHalf: ${isSecondHalf}`);
-
-          // Критические тикеты спаунятся только во второй половине времени смены
-          let isCritical = false;
-
-          // Проверяем условия для критического тикета
-          if (isSecondHalf) {
-            // Во второй половине - 40% вероятность критического тикета
-            isCritical = Math.random() < 0.4;
-            console.log(`🎯 Critical chance check for ${session.participantId}: ${isCritical ? 'CRITICAL' : 'normal'} (random: ${Math.random()})`);
+        if (isSecondHalf) {
+          // Вторая половина: спауним только критические тикеты, не чаще раза в минуту
+          if (!session.lastCriticalSpawnTime || (now - session.lastCriticalSpawnTime) >= CRITICAL_COOLDOWN) {
+            console.log(`🎯 Spawning CRITICAL ticket (second half, cooldown passed) for ${session.participantId}`);
+            await spawnTicketForSession(session, true); // isCritical = true
+            session.lastCriticalSpawnTime = now;
           }
-
-          console.log(`🎯 Spawning ${isCritical ? 'CRITICAL ' : ''}ticket in stage 2 for ${session.participantId}`);
-          await spawnTicketForSession(session, isCritical);
+        } else {
+          // Первая половина: обычные тикеты с вероятностью 30%
+          if (Math.random() > 0.7) {
+            console.log(`🎯 Spawning normal ticket for ${session.participantId}`);
+            await spawnTicketForSession(session, false); // не критический
+          }
         }
       } catch (error) {
         console.error('Error in ticket spawning interval:', error);
@@ -1458,6 +1465,36 @@ io.on('connection', (socket) => {
 
     setTimeout(async () => {
       if (ticket.assignedTo === agent.name && ticket.status === 'in Progress') {
+        // Для критических тикетов – 99% шанс провала
+        if (ticket.isCritical && Math.random() * 100 < BOT_CRITICAL_FAIL_PROB) {
+          console.log(`❌ Agent ${agent.name} failed to solve critical ticket ${ticketId}`);
+
+          ticket.status = 'not assigned';
+          ticket.assignedTo = null;
+          ticket.messages.push({
+            from: 'agent',
+            text: `${agent.name} tried but couldn't solve the critical issue. Returning ticket to queue.`,
+            timestamp: Date.now()
+          });
+
+          io.to(session.participantId).emit('tickets:update', session.tickets);
+          socket.emit('bot:notification', {
+            botName: agent.name,
+            message: `failed to solve critical ticket, returning to queue.`,
+            type: 'error'
+          });
+
+          await writeLog('BOT_FAIL_CRITICAL', agent.name, {
+            ticketId,
+            participantId: session.participantId,
+            stage: session.currentStage,
+            parity: session.participantParity,
+            isCritical: true
+          });
+
+          return; // не продолжаем успешное решение
+        }
+
         console.log(`✅ Agent ${agent.name} solved ticket ${ticketId}`);
 
         ticket.status = 'solved';
@@ -1807,9 +1844,7 @@ app.post('/admin/start', async (req, res) => {
       // For odd participants (work with colleagues) bots should be online
       session.agents.forEach(a => a.status = 'online');
       console.log(`👥 Setting bots to online for odd participant ${participantId}`);
-
-      // Start bot lifecycle for this session
-      startBotLifecycleForSession(session);
+      // Интервал изменения статусов больше не запускается – коллеги всегда онлайн
     } else {
       // For even participants (work with AI) bots should be offline
       session.agents.forEach(a => a.status = 'offline');

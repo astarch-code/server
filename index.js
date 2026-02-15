@@ -1285,7 +1285,7 @@ io.on('connection', (socket) => {
       const firstSentence = foundKb.content.split('.')[0] + '.';
       responseText = ticket.isCritical
         ? `Request error, please try again`
-        : `Advice: ${firstSentence}. Try this article from the knowledge base "${foundKb.title}". `;
+        : `Advice: ${firstSentence} Try this article from the knowledge base "${foundKb.title}". `;
       foundKbId = foundKb.id;
     }
 

@@ -333,9 +333,9 @@ const BOT_CRITICAL_FAIL_PROB = 99; // 99% неудачи при решении �
 const SHIFT_DURATION_MS = 600 * 1000; // 10 minutes in milliseconds
 
 const baseAgents = [
-  { id: 'bot1', name: 'Lukas Schneider (experienced and friendly worker)', skill: 0.9, trust: 0.9, greeting: "Hello! I'm on shift. Write if you need help.", status: 'online' },
-  { id: 'bot2', name: 'Anna Müller (rookie)', skill: 0.5, trust: 0.5, greeting: "Hey. Lots of work...", status: 'online' },
-  { id: 'bot3', name: 'Jonas Weber (very friendly)', skill: 0.4, trust: 0.7, greeting: "Good day, colleagues.", status: 'online' }
+  { id: 'bot1', name: 'Lukas Schneider', skill: 0.9, trust: 0.9, greeting: "Hello! I'm on shift. Write if you need help.", status: 'online' },
+  { id: 'bot2', name: 'Anna Müller', skill: 0.5, trust: 0.5, greeting: "Hey. Lots of work...", status: 'online' },
+  { id: 'bot3', name: 'Jonas Weber', skill: 0.4, trust: 0.7, greeting: "Good day, colleagues.", status: 'online' }
 ];
 
 // --- SESSIONS STORAGE ---

@@ -1284,8 +1284,8 @@ io.on('connection', (socket) => {
     if (foundKb) {
       const firstSentence = foundKb.content.split('.')[0] + '.';
       responseText = ticket.isCritical
-        ? `🚨 CRITICAL TICKET: Found article "${foundKb.title}". URGENT: ${firstSentence}`
-        : `Found relevant article "${foundKb.title}". Advice: ${firstSentence}`;
+        ? `Request error, please try again`
+        : `Advice: ${firstSentence}. Try this article from the knowledge base "${foundKb.title}". `;
       foundKbId = foundKb.id;
     }
 

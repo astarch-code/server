@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IT Support System Tutorial</title>
+    <title>Experiment Instructions – IT Support Simulation</title>
     <style>
         * {
             margin: 0;
@@ -20,7 +20,7 @@
         }
 
         .container {
-            max-width: 900px;
+            max-width: 1000px;
             margin: 0 auto;
             padding: 30px;
             background: rgba(15, 23, 42, 0.9);
@@ -45,6 +45,10 @@
             margin-bottom: 10px;
         }
 
+        .header p {
+            color: #94a3b8;
+        }
+
         .section {
             margin-bottom: 30px;
             padding: 20px;
@@ -54,12 +58,23 @@
         }
 
         .section h2 {
-            font-size: 1.5rem;
+            font-size: 1.8rem;
             color: #f1f5f9;
-            margin-bottom: 15px;
+            margin-bottom: 20px;
             display: flex;
             align-items: center;
             gap: 10px;
+        }
+
+        .subsection {
+            margin-bottom: 25px;
+            padding-left: 20px;
+        }
+
+        .subsection h3 {
+            color: #06b6d4;
+            margin-bottom: 12px;
+            font-size: 1.3rem;
         }
 
         .step {
@@ -68,21 +83,40 @@
             border-left: 2px solid rgba(148, 163, 184, 0.3);
         }
 
-        .step h3 {
-            color: #06b6d4;
-            margin-bottom: 10px;
+        .step h4 {
+            color: #f1f5f9;
+            margin-bottom: 8px;
+            font-size: 1.1rem;
         }
 
         .highlight {
             background: rgba(6, 182, 212, 0.1);
             border: 1px solid rgba(6, 182, 212, 0.3);
-            padding: 12px 16px;
+            padding: 15px 20px;
             border-radius: 8px;
             margin: 15px 0;
         }
 
+        .note {
+            background: rgba(245, 158, 11, 0.1);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin: 15px 0;
+            color: #fcd34d;
+        }
+
+        .warning {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin: 15px 0;
+            color: #fca5a5;
+        }
+
         ul, ol {
-            padding-left: 20px;
+            padding-left: 25px;
             margin: 10px 0;
         }
 
@@ -94,7 +128,7 @@
             display: inline-block;
             background: rgba(6, 182, 212, 0.2);
             border: 1px solid rgba(6, 182, 212, 0.5);
-            padding: 4px 10px;
+            padding: 4px 12px;
             border-radius: 6px;
             font-family: monospace;
             font-size: 0.9rem;
@@ -104,7 +138,7 @@
 
         .status-badge {
             display: inline-block;
-            padding: 4px 10px;
+            padding: 4px 12px;
             border-radius: 6px;
             font-size: 0.8rem;
             font-weight: 600;
@@ -116,117 +150,303 @@
         .status-solved { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
         .status-critical { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
 
+        .kb {
+            font-family: monospace;
+            background: #1e293b;
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: #f1f5f9;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .card {
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            border-radius: 10px;
+            padding: 15px;
+        }
+
+        .card h4 {
+            color: #06b6d4;
+            margin-bottom: 10px;
+        }
+
         @media (max-width: 768px) {
             .container { padding: 15px; }
             .header h1 { font-size: 2rem; }
+            .grid-2 { grid-template-columns: 1fr; }
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>IT Support System Tutorial</h1>
-            <p>Learn how to use the ticket management system</p>
+            <h1>Experiment Instructions</h1>
+            <p>Read carefully before you start. This guide explains every step of the experiment.</p>
         </div>
 
+        <!-- OVERVIEW -->
         <div class="section">
-            <h2>🎯 System Overview</h2>
-            <p>Welcome to the IT Support System simulation. You will handle technical support tickets in this environment.</p>
+            <h2>🧪 Experiment Overview</h2>
+            <p>You are taking part in a scientific study simulating an IT support helpdesk. Your task is to handle incoming tickets from users, find solutions, and close them.</p>
+            <p>You will be randomly assigned to one of two groups based on your participant number:</p>
             <ul>
-                <li><strong>Ticket Queue</strong> - List of all incoming support requests</li>
-                <li><strong>Knowledge Base (KB)</strong> - Articles with solutions to common problems</li>
-                <li><strong>Team/Colleagues</strong> - Other support agents who can help you</li>
-                <li><strong>AI Assistant</strong> - AI that can provide advice or solve tickets</li>
+                <li><strong>Even-numbered participants</strong> work with an <strong>AI assistant</strong> (you can ask for advice, or the AI may work autonomously depending on the mode).</li>
+                <li><strong>Odd-numbered participants</strong> work in a <strong>team</strong> with simulated colleagues (bots) to whom you can delegate tickets.</li>
             </ul>
-            <div class="highlight">
-                <strong>Important:</strong> This tutorial has no time limit. Take your time to learn all features.
-            </div>
+            <p>All your actions are logged anonymously and used only for research.</p>
         </div>
 
+        <!-- OVERALL FLOW -->
         <div class="section">
-            <h2>📋 Your Tasks</h2>
-            <p>As an IT support agent, your main responsibilities:</p>
+            <h2>📅 Experiment Flow</h2>
             <ol>
-                <li>Monitor the ticket queue for new requests</li>
-                <li>Assign tickets to yourself when ready to work on them</li>
-                <li>Find solutions using the Knowledge Base</li>
-                <li>Complete tickets by providing accurate solutions</li>
-                <li>Handle critical tickets with urgency</li>
+                <li><strong>Pre‑experiment survey</strong> – a few questions about yourself.</li>
+                <li><strong>Tutorial (Stage 1)</strong> – learn the interface, no time limit.</li>
+                <li><strong>Main experiment (Stage 2)</strong> – 10‑minute shift with real tickets and deadlines.</li>
+                <li><strong>Post‑experiment survey</strong> – questions about your experience.</li>
+                <li><strong>Final screen</strong> – confirmation that your data has been saved.</li>
             </ol>
         </div>
 
+        <!-- STAGE 0: PRE-SURVEY -->
         <div class="section">
-            <h2>🔄 Step-by-Step Guide</h2>
-            
-            <div class="step">
-                <h3>Step 1: View and Assign Tickets</h3>
-                <p>Go to the <strong>Tickets</strong> page to see all available tickets. Each ticket shows:</p>
+            <h2>📋 Step 0: Pre‑experiment Survey</h2>
+            <p>After clicking “Next” on the welcome screen, you will see a survey form.</p>
+            <ul>
+                <li>Answer all required questions (marked with <span style="color:#ef4444;">*</span>).</li>
+                <li>For multiple‑choice questions, click the option you want.</li>
+                <li>For text questions, type your answer in the box.</li>
+                <li>Click <span class="button-demo">Complete Survey</span> when finished.</li>
+            </ul>
+            <p>Your answers will be saved anonymously. After submitting, you will see the <strong>Tutorial Briefing</strong> screen.</p>
+        </div>
+
+        <!-- TUTORIAL BRIEFING -->
+        <div class="section">
+            <h2>🎓 Tutorial Briefing</h2>
+            <p>You will see a screen explaining that you are about to start the tutorial. It reminds you that you can always open these instructions by clicking the <strong>instruction button</strong> in the sidebar (or mobile menu).</p>
+            <p>Click <span class="button-demo">Start Tutorial</span> to begin.</p>
+        </div>
+
+        <!-- TUTORIAL – INTERFACE ELEMENTS -->
+        <div class="section">
+            <h2>🖥️ Tutorial – Interface Guide</h2>
+            <p>During the tutorial, you can explore without any time pressure. Here’s what you’ll see:</p>
+
+            <div class="subsection">
+                <h3>Sidebar / Mobile Menu</h3>
+                <p>On the left (or bottom on mobile) you have navigation:</p>
                 <ul>
-                    <li>Ticket title and description</li>
-                    <li>Status: <span class="status-badge status-free">Free</span>, <span class="status-badge status-progress">In Progress</span>, or <span class="status-badge status-solved">Solved</span></li>
-                    <li>Timer showing time remaining</li>
-                    <li>Severity (normal or critical)</li>
+                    <li><span class="button-demo">Tickets</span> – list of all incoming tickets.</li>
+                    <li><span class="button-demo">Knowledge Base</span> – articles with solutions.</li>
+                    <li><span class="button-demo">Colleagues</span> – list of team members (offline during tutorial).</li>
+                    <li><span class="button-demo">View Instructions</span> – re‑opens this guide.</li>
                 </ul>
-                <div class="highlight">
-                    <strong>To assign a ticket:</strong> Click on the ticket, then change status from <span class="button-demo">Free</span> to <span class="button-demo">In Progress</span>.
+            </div>
+
+            <div class="subsection">
+                <h3>Ticket List</h3>
+                <p>Each ticket shows:</p>
+                <ul>
+                    <li><strong>Title</strong> and short description.</li>
+                    <li><strong>Status</strong> – <span class="status-badge status-free">Free</span> (not assigned), <span class="status-badge status-progress">In Progress</span> (assigned to you), <span class="status-badge status-solved">Solved</span>.</li>
+                    <li><strong>Timer</strong> – for normal tickets shows time left to assign/solve. Tutorial tickets have “No time limit”.</li>
+                    <li><strong>Critical tickets</strong> have a red background and a 🚨 icon.</li>
+                    <li><strong>Tutorial tickets</strong> have a greenish background and a 📚 icon.</li>
+                </ul>
+                <p>Click any ticket to open its details.</p>
+            </div>
+
+            <div class="subsection">
+                <h3>Ticket Detail View</h3>
+                <p>Here you can:</p>
+                <ul>
+                    <li>Read the full description and message history.</li>
+                    <li>Change the ticket status using the dropdown at the bottom (or in the list).</li>
+                    <li>If the ticket is assigned to you (<span class="status-badge status-progress">In Progress</span>), a text area appears where you can type your solution.</li>
+                    <li>You can also attach a Knowledge Base article from the dropdown.</li>
+                    <li>Click <span class="button-demo">Complete</span> to submit your solution.</li>
+                </ul>
+            </div>
+
+            <div class="subsection">
+                <h3>Knowledge Base</h3>
+                <p>Contains articles with IDs like <span class="kb">kb_101</span>. Click an article to read it. You can search by keywords.</p>
+                <p>In the ticket detail, after typing a solution, select the relevant article ID from the dropdown. This improves the chance that the client accepts the solution.</p>
+            </div>
+
+            <div class="subsection">
+                <h3>Colleagues Page</h3>
+                <p>During the tutorial all colleagues are offline. In the main experiment, their status will change (online/away) if you are in the team group.</p>
+            </div>
+
+            <div class="note">
+                <strong>Tutorial task:</strong> Try to take a tutorial ticket, change its status to “In Progress”, then write a dummy solution, attach any KB article, and click “Complete”. You will see a success message.
+            </div>
+        </div>
+
+        <!-- FINISHING TUTORIAL -->
+        <div class="section">
+            <h2>✅ Finishing the Tutorial</h2>
+            <p>When you feel comfortable with the interface, click the <strong>“Finish Tutorial”</strong> button (floating at the bottom right).</p>
+            <p>A confirmation will be sent to the server, and you will be taken to the briefing for <strong>Stage 2</strong>.</p>
+            <p class="warning">Important: All tutorial tickets will be removed, and the real experiment begins.</p>
+        </div>
+
+        <!-- STAGE 2 BRIEFING -->
+        <div class="section">
+            <h2>🚀 Stage 2 Briefing</h2>
+            <p>You will see a screen showing your group and a description of what to expect.</p>
+            <ul>
+                <li>If you are <strong>even</strong> (AI group), you will be asked to select an <strong>AI mode</strong>:
+                    <ul>
+                        <li><strong>Normal mode:</strong> AI gives advice only when you click “Ask AI”.</li>
+                        <li><strong>Autonomous mode:</strong> AI may take tickets and try to solve them on its own (it may skip or fail).</li>
+                    </ul>
+                </li>
+                <li>If you are <strong>odd</strong> (team group), you will see information about your colleagues. They are online at the start and can change status during the shift.</li>
+            </ul>
+            <p>Click <span class="button-demo">Start Experiment</span> to begin the 10‑minute shift.</p>
+        </div>
+
+        <!-- STAGE 2 – DURING THE SHIFT -->
+        <div class="section">
+            <h2>⏳ During the Main Experiment (Stage 2)</h2>
+            <p>The shift lasts exactly <strong>10 minutes</strong>. A timer at the top of the screen shows the remaining time. When it reaches zero, the shift ends automatically and you will see the summary.</p>
+
+            <div class="grid-2">
+                <div class="card">
+                    <h4>🎫 Tickets</h4>
+                    <p>New tickets arrive automatically. They have strict deadlines:</p>
+                    <ul>
+                        <li><strong>Normal tickets:</strong> 2 min to assign, 5 min to solve.</li>
+                        <li><strong>Critical tickets (🚨):</strong> 1 min to assign, 2 min to solve.</li>
+                    </ul>
+                    <p>If you miss a deadline, you will receive a warning notification and the client may become unhappy.</p>
+                </div>
+                <div class="card">
+                    <h4>⏱️ Timers</h4>
+                    <p>Each ticket shows a countdown. Colour codes:</p>
+                    <ul>
+                        <li><span style="color:#94a3b8;">Grey</span> – plenty of time.</li>
+                        <li><span style="color:#fbbf24;">Amber</span> – less than 30 seconds left.</li>
+                        <li><span style="color:#ef4444;">Red</span> – overdue.</li>
+                    </ul>
                 </div>
             </div>
 
-            <div class="step">
-                <h3>Step 2: Find Solutions</h3>
-                <p>After assigning a ticket, find a solution:</p>
+            <div class="subsection">
+                <h3>For AI Group (even participants)</h3>
                 <ul>
-                    <li>Check the <strong>Knowledge Base</strong> for related articles</li>
-                    <li>Read articles by clicking on them</li>
-                    <li>Look for keywords matching the ticket description</li>
+                    <li>In <strong>normal mode</strong>, when viewing a ticket assigned to you, you will see an <span class="button-demo">Ask AI</span> button. Click it to get advice. The AI may suggest a KB article.</li>
+                    <li>In <strong>autonomous mode</strong>, the AI will automatically take some tickets and attempt to solve them. You will see notifications like “AI took ticket…”, “AI solved…”, “AI failed…”. You can still work on tickets yourself.</li>
+                    <li>You can change the AI mode during the shift by clicking the <span class="button-demo">AI Mode: Normal/Autonomous</span> button in the top bar.</li>
                 </ul>
             </div>
 
-            <div class="step">
-                <h3>Step 3: Complete the Ticket</h3>
-                <p>Once you've found a solution:</p>
-                <ol>
-                    <li>In ticket detail view, write your solution</li>
-                    <li>Select the relevant Knowledge Base article</li>
-                    <li>Click <span class="button-demo">Complete</span> button</li>
-                </ol>
+            <div class="subsection">
+                <h3>For Team Group (odd participants)</h3>
+                <ul>
+                    <li>Colleagues (bots) appear on the <strong>Colleagues</strong> page. Their status may change between <span style="color:#22c55e;">online</span> and <span style="color:#f59e0b;">away</span> during the shift.</li>
+                    <li>To delegate a ticket, open its detail and make sure it is assigned to you (<span class="status-badge status-progress">In Progress</span>). Then click the <span class="button-demo">Team</span> button (mobile) or use the delegation panel on the right (desktop).</li>
+                    <li>Select a colleague who is online. They may accept or refuse. If they accept, they will solve it after some time (faster for critical tickets).</li>
+                    <li>You will receive notifications about the outcome.</li>
+                </ul>
             </div>
 
-            <div class="step">
-                <h3>Step 4: Handle Critical Tickets</h3>
-                <p><span class="status-badge status-critical">CRITICAL</span> tickets require immediate attention:</p>
+            <div class="subsection">
+                <h3>Critical Tickets (🚨)</h3>
+                <p>These are urgent and appear mainly in the second half of the shift. They have a red background and flashing icons.</p>
                 <ul>
-                    <li>Red timers count down faster</li>
-                    <li>Business operations are affected</li>
-                    <li>Urgent notifications appear</li>
+                    <li>Assign and solve them as fast as possible.</li>
+                    <li>If you are in the team group, colleagues have a very high chance of failing critical tickets (99% fail). So it’s better to handle them yourself.</li>
+                    <li>If you are in the AI group, the autonomous AI also has a high miss/fail rate for critical tickets – your intervention is crucial.</li>
+                </ul>
+            </div>
+
+            <div class="subsection">
+                <h3>Solving a Ticket</h3>
+                <ol>
+                    <li>Assign it to yourself (status “In Progress”).</li>
+                    <li>Read the description and check the Knowledge Base for relevant articles.</li>
+                    <li>In the ticket detail, write your solution in the text area.</li>
+                    <li>Select the ID of the KB article you used (if any).</li>
+                    <li>Click <span class="button-demo">Complete</span>.</li>
+                </ol>
+                <p>After a short delay, the client will react. If your solution matches the KB article or is detailed enough, the ticket will be marked solved. Otherwise, it may be returned to “In Progress” with a negative comment.</p>
+            </div>
+
+            <div class="subsection">
+                <h3>Notifications</h3>
+                <p>Toast notifications appear in the top‑right corner. They inform you about:</p>
+                <ul>
+                    <li>New tickets (especially critical ones).</li>
+                    <li>AI actions (advice given, tickets taken, solved, failed).</li>
+                    <li>Bot delegation results.</li>
+                    <li>Deadline warnings.</li>
+                    <li>Client satisfaction/dissatisfaction.</li>
                 </ul>
             </div>
         </div>
 
+        <!-- END OF SHIFT / SUMMARY -->
         <div class="section">
-            <h2>🎮 Controls</h2>
+            <h2>📊 Shift Summary</h2>
+            <p>When time runs out (or if you manually finish early using the debug button – please don’t), you will see a summary screen with statistics:</p>
             <ul>
-                <li><strong>Tickets page</strong>: View and manage all tickets</li>
-                <li><strong>Knowledge Base</strong>: Search for solution articles</li>
-                <li><strong>Team page</strong>: See colleague availability (in team mode)</li>
-                <li><strong>Ask AI</strong>: Get AI advice on tickets (in AI mode)</li>
-                <li><strong>Delegate</strong>: Assign tickets to colleagues (in team mode)</li>
+                <li>Total tickets, solved by you, solved by AI/colleagues, missed, in progress.</li>
+                <li>Number of critical tickets and how many were resolved.</li>
+            </ul>
+            <p>Click <span class="button-demo">Next Stage</span> (or “Complete Experiment” after stage 2).</p>
+        </div>
+
+        <!-- POST-EXPERIMENT SURVEY -->
+        <div class="section">
+            <h2>📝 Post‑experiment Survey</h2>
+            <p>After stage 2, you will be asked to complete a final survey. The questions depend on your group (AI or team). Answer honestly – this helps our research.</p>
+            <p>Once submitted, you will see the final screen.</p>
+        </div>
+
+        <!-- FINAL SCREEN -->
+        <div class="section">
+            <h2>🎉 Experiment Completed</h2>
+            <p>Thank you! Your data has been saved. You can close the tab or click <span class="button-demo">Start New Experiment</span> to begin again (this will create a new participant ID).</p>
+            <p>The <span class="button-demo">Clear All Data</span> button removes all local storage – use only if you want to completely reset.</p>
+        </div>
+
+        <!-- GENERAL TIPS -->
+        <div class="section">
+            <h2>💡 General Tips</h2>
+            <ul>
+                <li>Always check the <strong>Knowledge Base</strong> – using the right article increases success.</li>
+                <li>Keep an eye on timers – especially for critical tickets.</li>
+                <li>If you are in the team group, delegate only when you are sure the colleague is online.</li>
+                <li>If you are in the AI group, use the “Ask AI” button when stuck.</li>
+                <li>You can open these instructions at any time via the sidebar button.</li>
+                <li>On mobile, use the bottom navigation and the menu button (top‑left) to access instructions and other pages.</li>
             </ul>
         </div>
 
-        <div class="section">
-            <h2>⚠️ Important Notes</h2>
+        <!-- TROUBLESHOOTING -->
+        <div class="warning">
+            <h3 style="color:#fca5a5;">⚠️ Troubleshooting</h3>
             <ul>
-                <li>Tutorial tickets have no time limits</li>
-                <li>Real experiment tickets have strict deadlines</li>
-                <li>Critical tickets must be solved immediately</li>
-                <li>Use Knowledge Base articles for better success rates</li>
-                <li>Check timer colors: green (plenty time), yellow (running out), red (overdue)</li>
+                <li>If the interface seems stuck, try refreshing the page. Your participant ID is saved in your browser.</li>
+                <li>If you don’t see any tickets after starting stage 2, wait a few seconds – they spawn automatically.</li>
+                <li>If notifications don’t appear, check that your browser allows notifications or pop‑ups.</li>
+                <li>For any technical issues, contact the experiment administrator.</li>
             </ul>
         </div>
 
         <div style="text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid rgba(148, 163, 184, 0.2);">
-            <p style="color: #94a3b8;">When ready, click "Start Tutorial" to begin practicing</p>
+            <p style="color: #94a3b8;">Thank you for participating! Your contribution is highly valuable.</p>
         </div>
     </div>
 </body>

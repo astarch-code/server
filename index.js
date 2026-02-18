@@ -332,10 +332,13 @@ const BOT_CRITICAL_FAIL_PROB = 99; // 99% неудачи при решении �
 
 const SHIFT_DURATION_MS = 600 * 1000; // 10 minutes in milliseconds
 
+// Расширенный пул ботов (теперь 5)
 const baseAgents = [
   { id: 'bot1', name: 'Lukas Schneider', skill: 0.9, trust: 0.9, greeting: "Hello! I'm on shift. Write if you need help.", status: 'online' },
   { id: 'bot2', name: 'Anna Müller', skill: 0.5, trust: 0.5, greeting: "Hey. Lots of work...", status: 'online' },
-  { id: 'bot3', name: 'Jonas Weber', skill: 0.4, trust: 0.7, greeting: "Good day, colleagues.", status: 'online' }
+  { id: 'bot3', name: 'Jonas Weber', skill: 0.4, trust: 0.7, greeting: "Good day, colleagues.", status: 'online' },
+  { id: 'bot4', name: 'Felix Hoffmann', skill: 0.6, trust: 0.8, greeting: "Morning! Ready to help.", status: 'online' },
+  { id: 'bot5', name: 'Laura Schmidt', skill: 0.7, trust: 0.6, greeting: "Hi there, what's the issue?", status: 'online' }
 ];
 
 // --- SESSIONS STORAGE ---
@@ -1841,12 +1844,15 @@ app.post('/admin/start', async (req, res) => {
   // if even - bots offline (work with AI)
   else if (session.currentStage === 2) {
     if (session.participantParity === 'odd') {
-      // For odd participants (work with colleagues) bots should be online
-      session.agents.forEach(a => a.status = 'online');
-      console.log(`👥 Setting bots to online for odd participant ${participantId}`);
-      // Интервал изменения статусов больше не запускается – коллеги всегда онлайн
+      // Для нечётных участников выбираем случайное количество ботов (1-5) из общего пула
+      const numBots = Math.floor(Math.random() * 5) + 1; // 1 to 5
+      // Перемешиваем копию baseAgents и берём первые numBots
+      const shuffled = [...baseAgents].sort(() => 0.5 - Math.random());
+      const selected = shuffled.slice(0, numBots).map(agent => ({ ...agent, status: 'online' }));
+      session.agents = selected;
+      console.log(`👥 Selected ${numBots} bots for odd participant ${participantId}`);
     } else {
-      // For even participants (work with AI) bots should be offline
+      // Для чётных участников все боты остаются, но в статусе offline
       session.agents.forEach(a => a.status = 'offline');
       console.log(`🤖 Setting bots to offline for even participant ${participantId}`);
     }

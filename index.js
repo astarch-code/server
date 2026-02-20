@@ -145,7 +145,7 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
-// Initialize database tables including participants table
+// Initialize database tables including participants table and action_logs
 async function initDatabase() {
   try {
     // Drop and recreate participants table with trigger
@@ -206,7 +206,25 @@ async function initDatabase() {
       )
     `);
 
-    console.log('✅ Database tables initialized successfully with parity trigger');
+    // --- NEW: Action logs table for participant actions ---
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS action_logs (
+        id SERIAL PRIMARY KEY,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        participant_id VARCHAR(100) NOT NULL,
+        stage INTEGER NOT NULL,
+        action_type VARCHAR(50) NOT NULL,
+        ticket_id VARCHAR(100),
+        details JSONB
+      )
+    `);
+    // Create index for faster queries
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_action_logs_participant ON action_logs (participant_id);
+      CREATE INDEX IF NOT EXISTS idx_action_logs_timestamp ON action_logs (timestamp);
+    `);
+
+    console.log('✅ Database tables initialized successfully with parity trigger and action_logs');
   } catch (error) {
     console.error('❌ Error initializing database:', error);
   }
@@ -595,6 +613,20 @@ const savePostExperimentResponse = async (participantId, parity, questionId, que
     console.log(`[POST_EXPERIMENT] Saved response from ${participantId} (${parity}) for question ${questionId}`);
   } catch (error) {
     console.error('Error saving post-experiment response:', error);
+  }
+};
+
+// --- NEW: Action logging function ---
+const logAction = async (participantId, stage, actionType, ticketId = null, details = {}) => {
+  try {
+    const query = `
+      INSERT INTO action_logs (participant_id, stage, action_type, ticket_id, details)
+      VALUES ($1, $2, $3, $4, $5)
+    `;
+    await pool.query(query, [participantId, stage, actionType, ticketId, JSON.stringify(details)]);
+    console.log(`[ACTION_LOG] ${participantId} (stage ${stage}): ${actionType} ${ticketId ? 'ticket ' + ticketId.slice(0,5) : ''}`);
+  } catch (error) {
+    console.error('Error saving action log:', error);
   }
 };
 
@@ -1112,6 +1144,17 @@ io.on('connection', (socket) => {
     const oldStatus = ticket.status;
     ticket.status = newStatus;
 
+    // --- LOG ACTION: status change ---
+    const actionType = newStatus === 'in Progress' ? 'ticket_taken' :
+                       newStatus === 'not assigned' ? 'ticket_unassigned' :
+                       newStatus === 'solved' ? 'ticket_marked_solved' : 'ticket_status_change';
+    await logAction(participantId, session.currentStage, actionType, ticketId, {
+      oldStatus,
+      newStatus,
+      isCritical: ticket.isCritical,
+      isTutorial: ticket.isTutorial
+    });
+
     if (newStatus === 'in Progress') {
       ticket.assignedTo = 'participant';
       ticket.assignedAt = Date.now();
@@ -1167,6 +1210,14 @@ io.on('connection', (socket) => {
     t.solution = data.solution;
     t.linkedKbId = data.linkedKbId;
     t.solutionAuthor = 'participant';
+
+    // --- LOG ACTION: ticket solved ---
+    await logAction(session.participantId, session.currentStage, 'ticket_solved', t.id, {
+      solution: data.solution,
+      linkedKbId: data.linkedKbId,
+      isCritical: t.isCritical,
+      isTutorial: t.isTutorial
+    });
 
     await writeLog('TICKET_SOLVE', 'participant', {
       ticketId: t.id,
@@ -1294,6 +1345,13 @@ io.on('connection', (socket) => {
 
     console.log(`🤖 AI response for ${ticketId}: ${responseText.substring(0, 50)}...`);
 
+    // --- LOG ACTION: ai ask ---
+    logAction(session.participantId, session.currentStage, 'ai_ask', ticketId, {
+      question: ticket.title,
+      foundKb: !!foundKb,
+      kbId: foundKbId
+    });
+
     // Отправляем ответ обратно на тот же сокет
     socket.emit('ai:response', { ticketId, text: responseText, kbId: foundKbId });
 
@@ -1385,6 +1443,13 @@ io.on('connection', (socket) => {
     }
 
     console.log(`✅ Delegating ticket ${ticketId} to agent ${agent.name}`);
+
+    // --- LOG ACTION: delegate request ---
+    await logAction(session.participantId, session.currentStage, 'bot_delegate', ticketId, {
+      botId,
+      botName: agent.name,
+      botTrust: agent.trust
+    });
 
     await writeLog('DELEGATE_REQUEST', 'participant', {
       ticketId,
@@ -1558,6 +1623,9 @@ io.on('connection', (socket) => {
       console.error('❌ No session found for socket:', socket.id);
       return;
     }
+
+    // --- LOG ACTION: tutorial completed ---
+    await logAction(session.participantId, session.currentStage, 'tutorial_completed', null, {});
 
     console.log(`📈 Updating session ${session.participantId} from stage ${session.currentStage} to stage 2`);
 
@@ -2145,4 +2213,5 @@ server.listen(PORT, () => {
   console.log(`📁 Loaded ${kbArticles.length} KB articles`);
   console.log(`🧠 Server-side participant distribution system ready`);
   console.log(`📈 Group assignment based on PostgreSQL SERIAL id parity`);
+  console.log(`📝 Action logging enabled in table action_logs`);
 });

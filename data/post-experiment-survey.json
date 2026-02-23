@@ -11,7 +11,7 @@
                 "4",
                 "5 - excellent, Not sure"
             ],
-            "required": false
+            "required": true
         },
         {
             "id": "post_even_q2",
@@ -21,7 +21,7 @@
                 "Autonomous",
                 "Normal"
             ],
-            "required": false
+            "required": true
         },
         {
             "id": "post_even_q3",
@@ -32,7 +32,7 @@
                 "Yest, to normal",
                 "No"
             ],
-            "required": false
+            "required": true
         },
         {
             "id": "post_even_q4",
@@ -43,7 +43,7 @@
                 "Few times",
                 "Tried to solve everything by myself"
             ],
-            "required": false
+            "required": true
         },
         {
             "id": "post_even_q5",
@@ -54,7 +54,7 @@
                 "No",
                 "Not sure"
             ],
-            "required": false
+            "required": true
         },
         {
             "id": "post_even_q6",
@@ -65,7 +65,7 @@
                 "No",
                 "Not sure"
             ],
-            "required": false
+            "required": true
         },
         {
             "id": "post_even_q7",
@@ -76,7 +76,7 @@
                 "No",
                 "Not sure"
             ],
-            "required": false
+            "required": true
         },
         {
             "id": "post_even_q8",
@@ -89,7 +89,7 @@
                 "4",
                 "5 - very unconfident, Not sure"
             ],
-            "required": false
+            "required": true
         },
         {
             "id": "post_even_q9",
@@ -100,7 +100,7 @@
                 "No",
                 "Not sure"
             ],
-            "required": false
+            "required": true
         },
         {
             "id": "post_even_q10",
@@ -111,7 +111,7 @@
                 "No",
                 "Not sure"
             ],
-            "required": false
+            "required": true
         },
         {
             "id": "post_even_q11",
@@ -133,7 +133,7 @@
                 "4",
                 "5 - excellent, Not sure"
             ],
-            "required": false
+            "required": true
         },
         {
             "id": "post_odd_q2",
@@ -144,7 +144,7 @@
                 "Few times",
                 "Tried to solve everything by myself"
             ],
-            "required": false
+            "required": true
         },
         {
             "id": "post_odd_q3",
@@ -155,7 +155,7 @@
                 "No",
                 "Not sure"
             ],
-            "required": false
+            "required": true
         },
         {
             "id": "post_odd_q4",
@@ -166,7 +166,7 @@
                 "Friendly, but not experienced",
                 "Not sure"
             ],
-            "required": false
+            "required": true
         },
         {
             "id": "post_odd_q5",
@@ -177,7 +177,7 @@
                 "No",
                 "Not sure"
             ],
-            "required": false
+            "required": true
         },
         {
             "id": "post_odd_q6",
@@ -188,7 +188,7 @@
                 "No",
                 "Not sure"
             ],
-            "required": false
+            "required": true
         },
         {
             "id": "post_odd_q7",
@@ -199,7 +199,7 @@
                 "No",
                 "Not sure"
             ],
-            "required": false
+            "required": true
         },
         {
             "id": "post_odd_q8",
@@ -212,7 +212,7 @@
                 "4",
                 "5 - very unconfident, Not sure"
             ],
-            "required": false
+            "required": true
         },
         {
             "id": "post_odd_q9",
@@ -223,10 +223,21 @@
                 "No",
                 "Not sure"
             ],
-            "required": false
+            "required": true
         },
         {
             "id": "post_odd_q10",
+            "question": "Woul you feel more confident if you had more colleagues?",
+            "type": "multiple",
+            "options": [
+                "Yes",
+                "No",
+                "Not sure"
+            ],
+            "required": true
+        },
+        {
+            "id": "post_odd_q11",
             "question": "Woul you feel more confident with an AI Bot rather than colleagues?",
             "type": "multiple",
             "options": [
@@ -234,10 +245,10 @@
                 "No",
                 "Not sure"
             ],
-            "required": false
+            "required": true
         },
         {
-            "id": "post_odd_q11",
+            "id": "post_odd_q12",
             "question": "General remarks",
             "type": "text",
             "prompt": "What did you like and what did you not like in this experiment?",

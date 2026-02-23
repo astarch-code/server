@@ -1160,7 +1160,7 @@ io.on('connection', (socket) => {
       ticket.assignedAt = Date.now();
       // For tutorial tickets, no deadline
       if (!ticket.isTutorial) {
-        ticket.deadlineSolve = Date.now() + (ticket.isCritical ? 120000 : 300000);
+        ticket.deadlineSolve = Date.now() + (ticket.isCritical ? 60000 : 180000);
       }
       console.log(`🔧 DEBUG: Ticket assigned to participant with solve deadline: ${ticket.deadlineSolve}`);
       await writeLog('TICKET_TAKEN', 'participant', {

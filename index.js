@@ -353,10 +353,10 @@ const SHIFT_DURATION_MS = 600 * 1000; // 10 minutes in milliseconds
 // Расширенный пул ботов (теперь 5)
 const baseAgents = [
   { id: 'bot1', name: 'Lukas Schneider', skill: 0.9, trust: 0.9, greeting: "Hello! I'm on shift. Write if you need help.", status: 'online' },
-  { id: 'bot2', name: 'Anna Müller', skill: 0.5, trust: 0.5, greeting: "Hey. Lots of work...", status: 'online' },
-  { id: 'bot3', name: 'Jonas Weber', skill: 0.4, trust: 0.7, greeting: "Good day, colleagues.", status: 'online' },
-  { id: 'bot4', name: 'Felix Hoffmann', skill: 0.6, trust: 0.8, greeting: "Morning! Ready to help.", status: 'online' },
-  { id: 'bot5', name: 'Laura Schmidt', skill: 0.7, trust: 0.6, greeting: "Hi there, what's the issue?", status: 'online' }
+  { id: 'bot2', name: 'Anna Müller', skill: 0.9, trust: 0.5, greeting: "Hey. Lots of work...", status: 'online' },
+  { id: 'bot3', name: 'Jonas Weber', skill: 0.9, trust: 0.7, greeting: "Good day, colleagues.", status: 'online' },
+  { id: 'bot4', name: 'Felix Hoffmann', skill: 0.9, trust: 0.8, greeting: "Morning! Ready to help.", status: 'online' },
+  { id: 'bot5', name: 'Laura Schmidt', skill: 0.9, trust: 0.6, greeting: "Hi there, what's the issue?", status: 'online' }
 ];
 
 // --- SESSIONS STORAGE ---
@@ -746,7 +746,7 @@ const handleAutonomousAIForSession = async (session, ticket) => {
 
   ticket.status = 'in Progress';
   ticket.assignedTo = 'AI';
-  ticket.deadlineSolve = Date.now() + (ticket.isCritical ? 120000 : 300000);
+  ticket.deadlineSolve = Date.now() + (ticket.isCritical ? 60000 : 180000);
   ticket.messages = ticket.messages || [];
   ticket.messages.push({
     from: 'AI',

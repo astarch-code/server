@@ -879,7 +879,7 @@ const startTicketSpawningForSession = (session) => {
         const now = Date.now();
         const timeElapsed = now - session.stageStartTime;
         const isSecondHalf = session.stageStartTime && session.stageDuration && timeElapsed > (session.stageDuration / 2);
-        const CRITICAL_COOLDOWN = 60000; // 60 секунд
+        const CRITICAL_COOLDOWN = 30000; // 30 секунд
 
         if (isSecondHalf) {
           // Вторая половина: спауним только критические тикеты, не чаще раза в минуту
@@ -898,7 +898,7 @@ const startTicketSpawningForSession = (session) => {
       } catch (error) {
         console.error('Error in ticket spawning interval:', error);
       }
-    }, 8000);
+    }, 45000);
 
     console.log(`✅ Ticket spawning interval started for ${session.participantId} (every 8s)`);
   }

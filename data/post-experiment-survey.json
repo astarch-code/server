@@ -41,7 +41,8 @@
             "options": [
                 "Every time",
                 "Few times",
-                "Tried to solve everything by myself"
+                "Tried to solve everything by myself",
+                "Did not use normal mode"
             ],
             "required": true
         },
@@ -225,9 +226,10 @@
             ],
             "required": true
         },
+
         {
             "id": "post_odd_q10",
-            "question": "Woul you feel more confident if you had more colleagues?",
+            "question": "Would you feel more confident with an AI Bot rather than colleagues?",
             "type": "multiple",
             "options": [
                 "Yes",
@@ -238,17 +240,6 @@
         },
         {
             "id": "post_odd_q11",
-            "question": "Woul you feel more confident with an AI Bot rather than colleagues?",
-            "type": "multiple",
-            "options": [
-                "Yes",
-                "No",
-                "Not sure"
-            ],
-            "required": true
-        },
-        {
-            "id": "post_odd_q12",
             "question": "General remarks",
             "type": "text",
             "prompt": "What did you like and what did you not like in this experiment?",

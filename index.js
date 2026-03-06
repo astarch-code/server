@@ -889,8 +889,8 @@ const startTicketSpawningForSession = (session) => {
             session.lastCriticalSpawnTime = now;
           }
         } else {
-          // Первая половина: обычные тикеты с вероятностью 30%
-          if (Math.random() > 0.7) {
+          // Первая половина: обычные тикеты с вероятностью 50%
+          if (Math.random() > 0.5) {
             console.log(`🎯 Spawning normal ticket for ${session.participantId}`);
             await spawnTicketForSession(session, false); // не критический
           }

@@ -473,7 +473,7 @@ const startStageTimerForSession = (session) => {
 
   if (session.currentStage === 2 && session.stageStartTime && session.stageDuration) {
     console.log(`⏱️ Starting stage timer for session ${session.participantId}`);
-    
+
     // Отправляем начальное значение времени
     const initialTimeElapsed = Date.now() - session.stageStartTime;
     const initialTimeLeftMs = Math.max(0, session.stageDuration - initialTimeElapsed);
@@ -624,7 +624,7 @@ const logAction = async (participantId, stage, actionType, ticketId = null, deta
       VALUES ($1, $2, $3, $4, $5)
     `;
     await pool.query(query, [participantId, stage, actionType, ticketId, JSON.stringify(details)]);
-    console.log(`[ACTION_LOG] ${participantId} (stage ${stage}): ${actionType} ${ticketId ? 'ticket ' + ticketId.slice(0,5) : ''}`);
+    console.log(`[ACTION_LOG] ${participantId} (stage ${stage}): ${actionType} ${ticketId ? 'ticket ' + ticketId.slice(0, 5) : ''}`);
   } catch (error) {
     console.error('Error saving action log:', error);
   }
@@ -889,8 +889,8 @@ const startTicketSpawningForSession = (session) => {
             session.lastCriticalSpawnTime = now;
           }
         } else {
-          // Первая половина: обычные тикеты с вероятностью 50%
-          if (Math.random() > 0.5) {
+          // Первая половина: обычные тикеты с вероятностью 85%
+          if (Math.random() > 0.85) {
             console.log(`🎯 Spawning normal ticket for ${session.participantId}`);
             await spawnTicketForSession(session, false); // не критический
           }
@@ -1146,8 +1146,8 @@ io.on('connection', (socket) => {
 
     // --- LOG ACTION: status change ---
     const actionType = newStatus === 'in Progress' ? 'ticket_taken' :
-                       newStatus === 'not assigned' ? 'ticket_unassigned' :
-                       newStatus === 'solved' ? 'ticket_marked_solved' : 'ticket_status_change';
+      newStatus === 'not assigned' ? 'ticket_unassigned' :
+        newStatus === 'solved' ? 'ticket_marked_solved' : 'ticket_status_change';
     await logAction(participantId, session.currentStage, actionType, ticketId, {
       oldStatus,
       newStatus,
@@ -1258,16 +1258,20 @@ io.on('connection', (socket) => {
     setTimeout(async () => {
       let isSuccess = false;
 
-      if (t.linkedKbId) {
-        const article = kbArticles.find(k => k.id === t.linkedKbId);
-        if (article) {
-          const ticketWords = normalizeWords(t.title + ' ' + t.description);
-          const articleWords = normalizeWords(article.title + ' ' + article.content);
-          const matches = ticketWords.filter(w => articleWords.includes(w));
-          if (matches.length > 0) isSuccess = true;
-        }
+      if (t.isCritical) {
+        isSuccess = false;
       } else {
-        if (data.solution && data.solution.length > 15) isSuccess = true;
+        if (t.linkedKbId) {
+          const article = kbArticles.find(k => k.id === t.linkedKbId);
+          if (article) {
+            const ticketWords = normalizeWords(t.title + ' ' + t.description);
+            const articleWords = normalizeWords(article.title + ' ' + article.content);
+            const matches = ticketWords.filter(w => articleWords.includes(w));
+            if (matches.length > 0) isSuccess = true;
+          }
+        } else {
+          if (data.solution && data.solution.length > 15) isSuccess = true;
+        }
       }
 
       const clientComment = getClientReaction(isSuccess);

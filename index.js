@@ -890,7 +890,7 @@ const startTicketSpawningForSession = (session) => {
           }
         } else {
           // Первая половина: обычные тикеты с вероятностью 85%
-          if (Math.random() > 0.85) {
+          if (Math.random() < 0.85) {
             console.log(`🎯 Spawning normal ticket for ${session.participantId}`);
             await spawnTicketForSession(session, false); // не критический
           }

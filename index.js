@@ -338,13 +338,13 @@ const BOT_LIFECYCLE_CONFIG = {
 };
 
 const AUTONOMOUS_AI_CONFIG = {
-  missProbability: 20,
-  failProbability: 40
+  missProbability: 5,
+  failProbability: 5
 };
 
 // Новые параметры для критических тикетов (итоговая вероятность решения = 5% * 20% = 1%)
 const AI_CRITICAL_MISS_PROB = 95;   // 95% пропуск
-const AI_CRITICAL_FAIL_PROB = 80;   // 80% неудача среди взятых
+const AI_CRITICAL_FAIL_PROB = 95;   // 80% неудача среди взятых
 
 const BOT_CRITICAL_FAIL_PROB = 99; // 99% неудачи при решении критического тикета
 

@@ -29,7 +29,7 @@
             "type": "multiple",
             "options": [
                 "Yes, to autonomous",
-                "Yest, to normal",
+                "Yes, to normal",
                 "No"
             ],
             "required": true
@@ -88,7 +88,8 @@
                 "2",
                 "3",
                 "4",
-                "5 - very unconfident, Not sure"
+                "5 - very unconfident", 
+                "Not sure"
             ],
             "required": true
         },
@@ -132,7 +133,8 @@
                 "2",
                 "3",
                 "4",
-                "5 - excellent, Not sure"
+                "5 - excellent", 
+                "Not sure"
             ],
             "required": true
         },
